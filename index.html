@@ -583,7 +583,7 @@ footer{
           <div class="chips" id="chips"></div>
         </div>
 
-        <button class="cta" id="gen" disabled>Show me the concept</button>
+        <button class="cta" id="gen">Show me the concept</button>
       </div>
     </div>
 
@@ -696,6 +696,11 @@ const CFG = {
       'Any size can be made as a goalie cut. Pick the size that fits and tick the goalie box on that player\u2019s row.',
     ],
   },
+  // Already on the card when the page loads, by name from `card` below. The
+  // brief is never blank, so the concept button never has to be switched off —
+  // somebody who just wants to see something can press it on arrival, and the
+  // card is right there for anyone who cares which colors they get.
+  defaultColors: ['Navy','White'],
   // Factory-matched color card. Swap these for your real swatches.
   card: [
     ['White','#ffffff'],['Silver','#c9ccd1'],['Steel','#8b9199'],['Graphite','#4a5058'],
@@ -743,6 +748,13 @@ const money = n => '$' + n.toLocaleString('en-US');
 const S = { logo:null, colors:[], roster:[], kit:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id, vibe:null, crest:null,
   session:(self.crypto&&self.crypto.randomUUID) ? self.crypto.randomUUID()
         : 's'+Date.now().toString(36)+Math.random().toString(36).slice(2,8) };
+
+/* Two colors are on the card before anybody touches the page, resolved by name
+   so the card stays the only place a hex is written down. */
+S.colors = CFG.defaultColors
+  .map(n=>CFG.card.find(([name])=>name===n))
+  .filter(Boolean)
+  .map(([name,hex])=>({name,hex}));
 
 /* ---------------- 0. the sell ---------------- */
 /* Presentation only: the homepage quotes the same numbers the order charges,
@@ -879,9 +891,6 @@ async function applyCrest(src){
     return src;
   }
 }
-
-/* Nobody generates a blank brief: a color has to be picked first. */
-function syncGen(){ $('#gen').disabled=!S.colors.length; }
 
 $('#moreBtn').onclick=()=>{
   const box=$('#more'), open=box.hidden;
@@ -1036,7 +1045,6 @@ function drawVersions(){
 }
 
 $('#gen').onclick=async()=>{
-  if(!S.colors.length){$('#pal').scrollIntoView({block:'center'});return;}
   const prompt=buildBrief();
   const btn=$('#gen'), msg=$('#genMsg');
   btn.disabled=true;btn.textContent='Generating…';
@@ -1064,7 +1072,7 @@ $('#gen').onclick=async()=>{
     msg.hidden=false;
   }
   btn.textContent='Show me the concept';
-  syncGen();
+  btn.disabled=false;
 };
 
 $('#refineChips').querySelectorAll('button').forEach(b=>{
@@ -1136,7 +1144,6 @@ CFG.card.forEach(([name,hex])=>{
     if(i>-1) S.colors.splice(i,1); else S.colors.push({name,hex});
     drawPicked();
     pushColors();
-    syncGen();
   };
   $('#pal').append(b);
 });
@@ -1151,7 +1158,7 @@ function drawPicked(){
     const s=document.createElement('span');s.textContent=c.name;
     const x=document.createElement('button');x.type='button';x.innerHTML='&times;';
     x.setAttribute('aria-label','Remove '+c.name);
-    x.onclick=()=>{S.colors=S.colors.filter(v=>v.hex!==c.hex);drawPicked();pushColors();syncGen();};
+    x.onclick=()=>{S.colors=S.colors.filter(v=>v.hex!==c.hex);drawPicked();pushColors();};
     t.append(i,s,x);box.append(t);
   });
 }
