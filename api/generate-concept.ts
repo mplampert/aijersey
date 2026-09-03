@@ -152,7 +152,9 @@ type Body = {
   // One of the keys of STYLES. Anything else falls back to DEFAULT_STYLE.
   style?: string;
   colors?: { name: string; hex: string }[];
-  logo?: string | null;
+  // Whether the customer has their own crest. The file itself never comes
+  // here: it is composited onto the finished jersey in the browser.
+  ownCrest?: boolean;
   // Data URL of the concept being refined. Absent on the first generation.
   baseImage?: string | null;
 };
@@ -189,10 +191,11 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  // The customer's own crest. An unreadable one is not worth failing over: the
-  // jersey is still drawn, just with an original crest instead.
-  const logo = readDataUrl(body.logo);
-  if (body.logo && !logo) console.warn("generate-concept: unreadable logo, ignoring it");
+  /* The customer's crest never reaches the model. It came back mirrored,
+     redrawn, or replaced with an invention of the model's own, so the chest is
+     drawn empty here and the real file is composited onto it in the browser.
+     Only the fact of a crest travels, never the file. */
+  const ownCrest = !!body.ownCrest;
 
   const hit = BLOCKED.find((b) => prompt.toLowerCase().includes(b));
   if (hit) {
@@ -216,7 +219,7 @@ export async function POST(request: Request): Promise<Response> {
     : "";
 
   // Front and back are requested in one image so the two views stay consistent
-  // with each other. An uploaded logo is attached as a reference image below.
+  // with each other.
 
   // Every rule below holds for an edit too, so a refinement can't quietly
   // reintroduce branding or drift the two views apart.
@@ -241,8 +244,8 @@ export async function POST(request: Request): Promise<Response> {
     "The brief may be only a few words. Treat it as direction, not as the full specification:",
     "honour everything it does say, and design the rest yourself rather than leaving it plain or literal.",
     "Where the brief is silent on striping, crest, yoke, collar or layout, choose a clean conventional hockey design that suits the colors and mood given.",
-    logo
-      ? "Always produce a finished, well-composed jersey: balanced striping on the sleeves and hem, the supplied logo as the chest crest, and a design that looks like real teamwear."
+    ownCrest
+      ? "Leave the chest completely empty: no crest, no logo, no wordmark, no monogram, no graphic and no lettering of any kind in the chest area, which must be plain fabric in the jersey's own colors. The team's own crest is added afterwards."
       : "Always produce a finished, well-composed jersey: balanced striping on the sleeves and hem, an original team crest or wordmark on the chest, and a design that looks like real teamwear.",
     "Design brief:",
     prompt,
@@ -264,18 +267,6 @@ export async function POST(request: Request): Promise<Response> {
   ]
     .filter(Boolean)
     .join(" ");
-
-  /* generateImage() takes a prompt and nothing else — ImageModelV2CallOptions
-     has no field for an input image, for any provider — so MODEL cannot be
-     shown the customer's crest. A generation carrying a logo therefore goes
-     through the multimodal model instead, the same one refinements use, with
-     the logo attached as a reference image. Without a logo nothing changes. */
-  const logoInstruction = [
-    instruction,
-    "The attached image is the team's own logo, and it is the only crest on this jersey.",
-    "Reproduce it on the chest exactly as supplied: do not redraw it, reinterpret it, restyle it, recolor it, crop it, change its proportions or add anything to it.",
-    "Do not invent, design or substitute any other crest, wordmark, badge, shield or emblem, anywhere on the garment. The supplied logo is the only mark on it.",
-  ].join(" ");
 
   try {
     if (base) {
@@ -300,28 +291,6 @@ export async function POST(request: Request): Promise<Response> {
 
       return Response.json({
         image: `data:${edited.mediaType};base64,${edited.base64}`,
-      });
-    }
-
-    if (logo) {
-      const drawn = await drawClean(body.variant ?? "logo generation", (extra) =>
-        twice("logo generation", () =>
-          draw([
-            { type: "text", text: extra ? `${logoInstruction} ${extra}` : logoInstruction },
-            { type: "file", data: logo.data, mediaType: logo.mediaType },
-          ]),
-        ),
-      );
-      if (drawn === "dropped") return Response.json(DROPPED, { status: 422 });
-      if (!drawn) {
-        return Response.json(
-          { error: "That didn't come back as an image. Try again in a moment." },
-          { status: 502 },
-        );
-      }
-
-      return Response.json({
-        image: `data:${drawn.mediaType};base64,${drawn.base64}`,
       });
     }
 
