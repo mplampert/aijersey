@@ -237,9 +237,9 @@ export async function POST(request: Request): Promise<Response> {
       }
       fields[FIELD.email] = email;
     }
-    // The colour card is step 2 but designs are filed in step 1, so a record
-    // is usually written before the customer has picked anything. The page
-    // sends the palette back through here whenever it changes.
+    // The page sends the palette back through here whenever it changes, so a
+    // record written before the customer settled on their colors still ends
+    // up with the right ones.
     if (body.colors !== undefined) fields[FIELD.colors] = colorText(body.colors);
 
     if (!body.recordId) {

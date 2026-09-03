@@ -58,6 +58,11 @@ section{
 
 label.fld,.fld{display:block;font-weight:600;font-size:15px;margin:14px 0 5px}
 .styles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.styles.four{grid-template-columns:repeat(auto-fit,minmax(84px,1fr))}
+.styles.two{grid-template-columns:repeat(2,1fr)}
+.link{background:0;border:0;padding:0;margin-top:16px;color:var(--board);
+  font:inherit;font-size:15px;text-decoration:underline;cursor:pointer}
+.link:hover{color:var(--board-lo)}
 .styles button{
   border:1.5px solid var(--line);border-radius:var(--rad);background:#fff;color:var(--puck);
   font:inherit;line-height:1.25;padding:11px 8px;text-align:center;cursor:pointer;
@@ -133,7 +138,7 @@ textarea{resize:vertical;line-height:1.5}
 .logo-prev[hidden]{display:none}
 .logo-prev img{width:56px;height:56px;object-fit:contain;border:1px solid var(--line);border-radius:4px;background:#fff}
 
-/* ---------- colour card ---------- */
+/* ---------- color card ---------- */
 .pal{display:grid;grid-template-columns:repeat(auto-fill,minmax(46px,1fr));gap:7px}
 .pal button{
   aspect-ratio:1;border-radius:4px;border:1px solid rgba(0,0,0,.2);cursor:pointer;padding:0;position:relative;
@@ -212,7 +217,7 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
   <!-- 1 ................................................. DESIGN -->
   <section>
     <div class="step-hd"><span class="step-no">1</span><h2>Design</h2></div>
-    <p class="note">Say what you want. Add your logo if you have one.</p>
+    <p class="note">Tap through the four questions. We'll draw three jerseys from your answers — no writing needed.</p>
 
     <div class="designer">
       <div>
@@ -235,7 +240,7 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
           <label class="fld" for="refinePrompt">What would you change?</label>
           <textarea id="refinePrompt" rows="2" placeholder="Make the dark blue orange"></textarea>
           <div class="chips" id="refineChips">
-            <button type="button">Different colours</button>
+            <button type="button">Different colors</button>
             <button type="button">New crest idea</button>
             <button type="button">More stripes</button>
             <button type="button">Simpler</button>
@@ -253,25 +258,43 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
       </div>
 
       <div>
-        <span class="fld">Jersey style</span>
-        <div class="styles" id="styles" role="group" aria-label="Jersey style"></div>
+        <span class="fld">1. Colors <span style="font-weight:400;color:var(--dim)">— pick two or three</span></span>
+        <p class="note">Matched on real jersey fabric — screens lie, this card doesn't.</p>
+        <div class="pal" id="pal"></div>
+        <div class="picked" id="picked"><span style="color:var(--dim);font-size:15px">Nothing picked yet</span></div>
 
-        <label class="fld" for="prompt">What should it look like?</label>
-        <textarea id="prompt" rows="4" placeholder="Navy and gold, old-school stripes, pelican crest, tropical palms on the sleeves"></textarea>
-        <div class="chips" id="chips"></div>
+        <span class="fld">2. Vibe</span>
+        <div class="styles four" id="vibes" role="group" aria-label="Vibe"></div>
 
-        <label class="fld" for="logo">Your logo <span style="font-weight:400;color:var(--dim)">— optional, PNG or SVG</span></label>
-        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Upload your logo">
-          Tap to upload, or drag a file here
+        <span class="fld">3. Crest <span style="font-weight:400;color:var(--dim)">— do you have a logo?</span></span>
+        <div class="styles two" id="crest" role="group" aria-label="Do you have a logo?"></div>
+        <div id="crestLogo" hidden>
+          <div class="drop" id="drop" tabindex="0" role="button" aria-label="Upload your logo">
+            Tap to upload, or drag a file here
+          </div>
+          <input type="file" id="logo" accept="image/*" hidden>
+          <div class="logo-prev" id="logoPrev" hidden>
+            <img id="logoImg" alt="Your uploaded logo">
+            <div><span id="logoName" style="font-size:15px"></span>
+            <button class="rm" id="logoRm" aria-label="Remove logo">&times;</button></div>
+          </div>
         </div>
-        <input type="file" id="logo" accept="image/*" hidden>
-        <div class="logo-prev" id="logoPrev" hidden>
-          <img id="logoImg" alt="Your uploaded logo">
-          <div><span id="logoName" style="font-size:15px"></span>
-          <button class="rm" id="logoRm" aria-label="Remove logo">&times;</button></div>
+        <div id="crestName" hidden>
+          <label class="fld" for="teamName">What's your team name?</label>
+          <input type="text" id="teamName" placeholder="Jersey City Pelicans" autocomplete="organization">
         </div>
 
-        <button class="cta" id="gen">Show me the concept</button>
+        <span class="fld">4. Collar</span>
+        <div class="styles" id="styles" role="group" aria-label="Collar"></div>
+
+        <button type="button" class="link" id="moreBtn" aria-expanded="false" aria-controls="more">Add details</button>
+        <div id="more" hidden>
+          <label class="fld" for="prompt">Anything else?</label>
+          <textarea id="prompt" rows="3" placeholder="Old-school stripes, tropical palms on the sleeves"></textarea>
+          <div class="chips" id="chips"></div>
+        </div>
+
+        <button class="cta" id="gen" disabled>Show me the concept</button>
       </div>
     </div>
 
@@ -282,17 +305,9 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
     </div>
   </section>
 
-  <!-- 2 ................................................. COLOURS -->
+  <!-- 2 ................................................. ROSTER -->
   <section>
-    <div class="step-hd"><span class="step-no">2</span><h2>Colours</h2></div>
-    <p class="note">Pick the colours you want us to hit. These are matched on real jersey fabric — screens lie, this card doesn't.</p>
-    <div class="pal" id="pal"></div>
-    <div class="picked" id="picked"><span style="color:var(--dim);font-size:15px">Nothing picked yet</span></div>
-  </section>
-
-  <!-- 3 ................................................. ROSTER -->
-  <section>
-    <div class="step-hd"><span class="step-no">3</span><h2>Roster</h2></div>
+    <div class="step-hd"><span class="step-no">2</span><h2>Roster</h2></div>
     <p class="note">Paste it, upload a CSV, or type it in. Minimum order is <span id="moqTxt"></span> jerseys.</p>
 
     <div class="roster-tools">
@@ -315,9 +330,9 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
     <p class="msg" id="rosterMsg"></p>
   </section>
 
-  <!-- 4 ................................................. ORDER -->
+  <!-- 3 ................................................. ORDER -->
   <section>
-    <div class="step-hd"><span class="step-no">4</span><h2>Order</h2></div>
+    <div class="step-hd"><span class="step-no">3</span><h2>Order</h2></div>
     <p class="note">Add the rest of the kit — same design, no extra art work.</p>
 
     <div id="addons"></div>
@@ -350,12 +365,12 @@ const CFG = {
   jerseyPrice: 49,
   addons: [
     {id:'socks',  label:'Matching socks',        price:19, note:'Same design, sublimated.'},
-    {id:'shells', label:'Pant shells',           price:39, note:'Team colours with your crest.'},
+    {id:'shells', label:'Pant shells',           price:39, note:'Team colors with your crest.'},
     {id:'practice',label:'Practice jerseys',     price:24, note:'Solid with logo. One per player.'},
     {id:'bag',    label:'Player bags',           price:69, note:'Embroidered logo, senior size.'},
   ],
   sizes: ['YS','YM','YL','S','M','L','XL','2XL','3XL'],
-  // Factory-matched colour card. Swap these for your real swatches.
+  // Factory-matched color card. Swap these for your real swatches.
   card: [
     ['White','#ffffff'],['Silver','#c9ccd1'],['Steel','#8b9199'],['Graphite','#4a5058'],
     ['Black','#141619'],['Vegas Gold','#b39056'],['Athletic Gold','#f0b323'],['Orange','#e4652a'],
@@ -364,8 +379,6 @@ const CFG = {
     ['Kelly','#187a3c'],['Forest','#154734'],['Lime','#7cc242'],['Cream','#efe7d3'],
   ],
   ideas: ['Old-school stripes','Tropical / island','Camo military night','Retro 90s','Blackout','Pink in the rink'],
-  // Jersey silhouettes offered in step 1. The cards, the default (first entry)
-  // and the id sent to the concept endpoint all read from this list.
   // Three takes fired in parallel on "Show me the concept". Ids match VARIANTS
   // in api/generate-concept.ts; the names label the thumbnails.
   variants: [
@@ -373,6 +386,21 @@ const CFG = {
     {id:'bold',  name:'Bold'},
     {id:'crest', name:'Alternate crest'},
   ],
+  // The four vibes offered in step 1. `brief` is the phrase sent to the model,
+  // so the words the customer taps and the words we send stay together.
+  vibes: [
+    {id:'classic', name:'Classic', note:'Traditional',   brief:'A classic, traditional team jersey'},
+    {id:'modern',  name:'Modern',  note:'Clean lines',   brief:'A modern jersey with clean lines and simple, confident shapes'},
+    {id:'bold',    name:'Bold',    note:'High contrast', brief:'A bold, high-contrast jersey with strong graphic striping'},
+    {id:'retro',   name:'Retro',   note:'Throwback',     brief:'A retro throwback jersey with an old-school feel'},
+  ],
+  // Whether the customer brings their own crest.
+  crest: [
+    {id:'logo', name:'Yes', note:'Upload it'},
+    {id:'name', name:'No',  note:"We'll design one"},
+  ],
+  // Jersey silhouettes offered in step 1. The cards, the default (first entry)
+  // and the id sent to the concept endpoint all read from this list.
   styles: [
     {id:'laced', name:'Laced collar', note:'Traditional'},
     {id:'vneck', name:'V-neck',       note:'Modern'},
@@ -386,7 +414,7 @@ const $ = s => document.querySelector(s);
 const money = n => '$' + n.toLocaleString('en-US');
 
 /* ---------------- state ---------------- */
-const S = { logo:null, colors:[], roster:[], addons:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id,
+const S = { logo:null, colors:[], roster:[], addons:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id, vibe:null, crest:null,
   session:(self.crypto&&self.crypto.randomUUID) ? self.crypto.randomUUID()
         : 's'+Date.now().toString(36)+Math.random().toString(36).slice(2,8) };
 
@@ -429,20 +457,58 @@ $('#chips').append(clearIdeas);
 // Typing in the box can add or remove a term too, so keep the chips honest.
 $('#prompt').oninput=syncChips;
 
-CFG.styles.forEach(st=>{
-  const b=document.createElement('button');
-  b.type='button';b.dataset.id=st.id;
-  b.setAttribute('aria-pressed',st.id===S.style?'true':'false');
-  const n=document.createElement('b');n.textContent=st.name;
-  const d=document.createElement('i');d.textContent=st.note;
-  b.append(n,d);
-  b.onclick=()=>{
-    S.style=st.id;
-    $('#styles').querySelectorAll('button').forEach(x=>
-      x.setAttribute('aria-pressed',x.dataset.id===st.id?'true':'false'));
-  };
-  $('#styles').append(b);
-});
+/* Vibe, crest and collar are the same tappable card, so one builder makes all
+   three. Nothing here needs typing. */
+function cards(sel,items,current,pick){
+  const box=$(sel);
+  items.forEach(it=>{
+    const b=document.createElement('button');
+    b.type='button';b.dataset.id=it.id;
+    b.setAttribute('aria-pressed',it.id===current?'true':'false');
+    const n=document.createElement('b');n.textContent=it.name;
+    const d=document.createElement('i');d.textContent=it.note;
+    b.append(n,d);
+    b.onclick=()=>{
+      pick(it.id);
+      box.querySelectorAll('button').forEach(x=>
+        x.setAttribute('aria-pressed',x.dataset.id===it.id?'true':'false'));
+    };
+    box.append(b);
+  });
+}
+cards('#vibes',CFG.vibes,S.vibe,id=>{S.vibe=id;});
+cards('#crest',CFG.crest,S.crest,id=>{S.crest=id;showCrest();});
+cards('#styles',CFG.styles,S.style,id=>{S.style=id;});
+
+function showCrest(){
+  $('#crestLogo').hidden = S.crest!=='logo';
+  $('#crestName').hidden = S.crest!=='name';
+}
+
+/* Everything the flow collected, written out as the brief the model reads. The
+   colors travel in their own field, so they are not repeated here. Someone who
+   taps nothing but a color still produces a full sentence. */
+function buildBrief(){
+  const vibe=CFG.vibes.find(v=>v.id===S.vibe);
+  const team=$('#teamName').value.trim();
+  const extra=$('#prompt').value.trim();
+  const parts=[vibe?vibe.brief:'A clean, conventional team jersey'];
+  if(S.crest==='name'&&team) parts.push('for a team called '+team+', with an original crest built around that name');
+  else if(S.crest==='logo') parts.push('with a simple, uncluttered chest where the team\'s own logo will sit');
+  if(extra) parts.push(extra);
+  return parts.join(', ')+'.';
+}
+
+/* Nobody generates a blank brief: a color has to be picked first. */
+function syncGen(){ $('#gen').disabled=!S.colors.length; }
+
+$('#moreBtn').onclick=()=>{
+  const box=$('#more'), open=box.hidden;
+  box.hidden=!open;
+  $('#moreBtn').setAttribute('aria-expanded',open?'true':'false');
+  $('#moreBtn').textContent=open?'Hide details':'Add details';
+  if(open) $('#prompt').focus();
+};
 
 const drop=$('#drop'), logoIn=$('#logo');
 drop.onclick=()=>logoIn.click();
@@ -522,7 +588,7 @@ function saveDesign(image,variant,onSaved){
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
       session:S.session,
-      prompt:$('#prompt').value.trim(),
+      prompt:buildBrief(),
       style:collar,
       variant,
       colors:S.colors,
@@ -534,10 +600,10 @@ function saveDesign(image,variant,onSaved){
     .then(d=>{ if(d&&d.code&&onSaved) onSaved(d); })
     .catch(()=>{});
 }
-/* The colour card is step 2, but designs are filed as they are drawn in step
-   1 — so at save time the palette is usually still empty. Whenever it changes,
-   push it to the records already on file. Debounced: picking four colours is
-   four clicks, not four rounds of writes. */
+/* Colors are picked before generating now, but they can still be changed
+   afterwards — so whenever the palette moves, push it to the records already
+   on file. Debounced: picking four colors is four clicks, not four rounds of
+   writes. */
 let colorPush;
 function pushColors(){
   clearTimeout(colorPush);
@@ -605,8 +671,8 @@ function drawVersions(){
 }
 
 $('#gen').onclick=async()=>{
-  const prompt=$('#prompt').value.trim();
-  if(!prompt){$('#prompt').focus();return;}
+  if(!S.colors.length){$('#pal').scrollIntoView({block:'center'});return;}
+  const prompt=buildBrief();
   const btn=$('#gen'), msg=$('#genMsg');
   btn.disabled=true;btn.textContent='Generating…';
   msg.hidden=true;
@@ -632,7 +698,8 @@ $('#gen').onclick=async()=>{
       +(landed===1?'is the one that did':'are the '+landed+' that did')+'.';
     msg.hidden=false;
   }
-  btn.disabled=false;btn.textContent='Show me the concept';
+  btn.textContent='Show me the concept';
+  syncGen();
 };
 
 $('#refineChips').querySelectorAll('button').forEach(b=>{
@@ -722,7 +789,7 @@ $('#refineBtn').onclick=async()=>{
   }
 };
 
-/* ---------------- 2. colours ---------------- */
+/* ---------------- 2. colors ---------------- */
 CFG.card.forEach(([name,hex])=>{
   const b=document.createElement('button');
   b.type='button';b.style.background=hex;b.title=name;b.dataset.hex=hex;b.dataset.name=name;
@@ -732,6 +799,7 @@ CFG.card.forEach(([name,hex])=>{
     if(i>-1) S.colors.splice(i,1); else S.colors.push({name,hex});
     drawPicked();
     pushColors();
+    syncGen();
   };
   $('#pal').append(b);
 });
@@ -746,7 +814,7 @@ function drawPicked(){
     const s=document.createElement('span');s.textContent=c.name;
     const x=document.createElement('button');x.type='button';x.innerHTML='&times;';
     x.setAttribute('aria-label','Remove '+c.name);
-    x.onclick=()=>{S.colors=S.colors.filter(v=>v.hex!==c.hex);drawPicked();pushColors();};
+    x.onclick=()=>{S.colors=S.colors.filter(v=>v.hex!==c.hex);drawPicked();pushColors();syncGen();};
     t.append(i,s,x);box.append(t);
   });
 }
@@ -891,7 +959,7 @@ function drawOrder(valid){
 $('#checkout').onclick=()=>{
   const order={
     design:{
-      prompt:$('#prompt').value.trim(),
+      prompt:buildBrief(),
       style:S.style,
       logo:S.logo?S.logo.name:null,
       selected:S.vIndex<0?null:{

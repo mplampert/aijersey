@@ -47,14 +47,14 @@ const STYLES: Record<string, string> = {
 const DEFAULT_STYLE = "laced";
 
 // Three takes on the same brief, so the options the customer picks between
-// differ by intent rather than by chance. The brief, the colours and the
+// differ by intent rather than by chance. The brief, the colors and the
 // collar are identical across all three — only the treatment moves.
 // Keys match CFG.variants in index.html.
 const VARIANTS: Record<string, string> = {
   safe:
     "Play this one straight: a conservative, classic team jersey. Restrained striping, a traditional chest crest, nothing experimental.",
   bold:
-    "Push this one: a bold, striking take on the same brief. Strong graphic striping or colour blocking and high contrast, still unmistakably a hockey jersey.",
+    "Push this one: a bold, striking take on the same brief. Strong graphic striping or color blocking and high contrast, still unmistakably a hockey jersey.",
   crest:
     "Keep the striping restrained and lead with the mark: a distinctly different chest crest concept — another way to symbolise the same brief — on an otherwise clean sweater.",
 };
@@ -127,7 +127,7 @@ export async function POST(request: Request): Promise<Response> {
       {
         error:
           `We can't copy "${hit}" — that team or brand belongs to someone ` +
-          `else. Tell us the colours and the feel you're after — bold and ` +
+          `else. Tell us the colors and the feel you're after — bold and ` +
           `modern, old-school, dark and mean — and we'll build something ` +
           `original for you.`,
       },
@@ -135,9 +135,9 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  // Naming the matched colours constrains the model to the factory's card.
+  // Naming the matched colors constrains the model to the factory's card.
   const colorLine = body.colors?.length
-    ? `Use only these colours: ${body.colors
+    ? `Use only these colors: ${body.colors
         .map((c) => `${c.name} (${c.hex})`)
         .join(", ")}.`
     : "";
@@ -157,7 +157,7 @@ export async function POST(request: Request): Promise<Response> {
   // reintroduce branding or drift the two views apart.
   const RULES = [
     STYLES[body.style ?? ""] ?? STYLES[DEFAULT_STYLE],
-    "Both views are the same physical garment: stripe placement, yoke shape, sleeve design and colour blocking must match exactly between the front and the back.",
+    "Both views are the same physical garment: stripe placement, yoke shape, sleeve design and color blocking must match exactly between the front and the back.",
     "The back must show a nameplate and a large two-digit number.",
     "The nameplate reads exactly NAME and the number is exactly 00 — these are placeholders, never an invented player name or number.",
     ...RULES_ALL,
@@ -170,7 +170,7 @@ export async function POST(request: Request): Promise<Response> {
     colorLine,
     "The brief may be only a few words. Treat it as direction, not as the full specification:",
     "honour everything it does say, and design the rest yourself rather than leaving it plain or literal.",
-    "Where the brief is silent on striping, crest, yoke, collar or layout, choose a clean conventional hockey design that suits the colours and mood given.",
+    "Where the brief is silent on striping, crest, yoke, collar or layout, choose a clean conventional hockey design that suits the colors and mood given.",
     "Always produce a finished, well-composed jersey: balanced striping on the sleeves and hem, an original team crest or wordmark on the chest, and a design that looks like real teamwear.",
     "Design brief:",
     prompt,
@@ -185,7 +185,7 @@ export async function POST(request: Request): Promise<Response> {
     "Edit the attached ice hockey jersey concept.",
     "Make only this change, described by the customer:",
     prompt,
-    "Everything else must stay exactly as it is — the same garment, the same layout, the same crest, the same striping and the same colours wherever the requested change does not touch them.",
+    "Everything else must stay exactly as it is — the same garment, the same layout, the same crest, the same striping and the same colors wherever the requested change does not touch them.",
     "Keep the front view and the back view side by side in the same arrangement as the attached image.",
     ...RULES,
     colorLine,
@@ -204,7 +204,7 @@ export async function POST(request: Request): Promise<Response> {
     "Show both socks side by side, laid flat and front-on, each one hanging vertically.",
     "Ice hockey socks are long tubular knit sleeves for the leg: they have no foot and no heel, and are open at both ends.",
     "Each sock runs from just above the ankle to the upper thigh, roughly 30 inches long.",
-    "Horizontal stripe bands run across the leg, taking their pattern, order, widths and colours from the attached jersey so the socks are clearly part of the same set.",
+    "Horizontal stripe bands run across the leg, taking their pattern, order, widths and colors from the attached jersey so the socks are clearly part of the same set.",
     "A plain ribbed band at the top and a plain cuff at the bottom, with no shaping for a foot or an ankle.",
     "Never draw a foot, a heel, a toe or a sole. These are not crew socks, ankle socks, or tube socks with closed ends.",
     "Do not show the jersey itself, a player, legs, skates, shin pads or any other garment — only the two socks.",
