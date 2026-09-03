@@ -1,5 +1,8 @@
 import { experimental_generateImage as generateImage, generateText } from "ai";
-import { checkImage } from "./check-image.ts";
+// Compiled output is .js, and the runtime resolves this specifier verbatim —
+// so it names the built file, not the source. A ".ts" here type-checks fine
+// locally and then 500s in production.
+import { checkImage } from "./check-image.js";
 
 /**
  * POST /api/generate-concept

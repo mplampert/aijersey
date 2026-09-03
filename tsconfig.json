@@ -13,8 +13,6 @@
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
-    // Vercel's TypeScript functions import each other by their real filename.
-    "allowImportingTsExtensions": true,
     // Only silences declaration files inside node_modules, never our own
     // source. @ai-sdk/provider-utils reaches for a dependency that ships no
     // types, which is not something this project can fix.
