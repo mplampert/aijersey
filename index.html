@@ -96,6 +96,10 @@ textarea{resize:vertical;line-height:1.5}
   padding:6px 13px;font-size:14.5px;cursor:pointer;color:var(--board);
 }
 .chips button:hover{background:#dde7ed}
+.chips button[aria-pressed=true]{background:var(--board);border-color:var(--board);color:#fff}
+.chips button[aria-pressed=true]:hover{background:var(--board-lo)}
+.chips .clear{background:0;border-color:transparent;color:var(--dim);text-decoration:underline}
+.chips .clear:hover{background:0;color:var(--puck)}
 
 .vers{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .vers[hidden],.refine[hidden]{display:none}
@@ -362,17 +366,43 @@ const money = n => '$' + n.toLocaleString('en-US');
 const S = { logo:null, colors:[], roster:[], addons:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id };
 
 /* ---------------- 1. design ---------------- */
+/* Chips toggle terms in and out of the prompt. The prompt text is the single
+   source of truth, so a chip still reads right after the box is hand-edited. */
+const listed = v => v.split(',').map(x=>x.trim()).filter(Boolean);
+const hasTerm = (v,t) => listed(v).some(x=>x.toLowerCase()===t.toLowerCase());
+function addTerm(v,t){
+  return v.trim() ? v.trim().replace(/,\s*$/,'') + ', ' + t.toLowerCase() : t;
+}
+function dropTerm(v,t){
+  return listed(v).filter(x=>x.toLowerCase()!==t.toLowerCase()).join(', ');
+}
+function syncChips(){
+  const v=$('#prompt').value;
+  S.styles=CFG.ideas.filter(t=>hasTerm(v,t));
+  $('#chips').querySelectorAll('button[data-idea]').forEach(b=>
+    b.setAttribute('aria-pressed',hasTerm(v,b.dataset.idea)?'true':'false'));
+}
+
 CFG.ideas.forEach(t=>{
   const b=document.createElement('button');
-  b.type='button';b.textContent=t;
+  b.type='button';b.textContent=t;b.dataset.idea=t;
+  b.setAttribute('aria-pressed','false');
   b.onclick=()=>{
     const p=$('#prompt');
-    p.value = p.value.trim() ? p.value.trim().replace(/,\s*$/,'') + ', ' + t.toLowerCase() : t;
-    if(!S.styles.includes(t)) S.styles.push(t);
+    p.value = hasTerm(p.value,t) ? dropTerm(p.value,t) : addTerm(p.value,t);
+    syncChips();
     p.focus();
   };
   $('#chips').append(b);
 });
+
+const clearIdeas=document.createElement('button');
+clearIdeas.type='button';clearIdeas.className='clear';clearIdeas.textContent='Clear';
+clearIdeas.onclick=()=>{const p=$('#prompt');p.value='';syncChips();p.focus();};
+$('#chips').append(clearIdeas);
+
+// Typing in the box can add or remove a term too, so keep the chips honest.
+$('#prompt').oninput=syncChips;
 
 CFG.styles.forEach(st=>{
   const b=document.createElement('button');
