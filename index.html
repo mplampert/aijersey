@@ -213,7 +213,8 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
           <p class="ph" id="ph">Your concept shows up here.</p>
         </div>
 
-        <div class="vers" id="vers" hidden role="group" aria-label="Concept versions"></div>
+        <div class="vers" id="vers" hidden role="group" aria-label="Concept options"></div>
+        <p class="saved" id="genMsg" hidden role="status"></p>
 
         <div class="refine" id="refine" hidden>
           <label class="fld" for="refinePrompt">What would you change?</label>
@@ -350,6 +351,13 @@ const CFG = {
   ideas: ['Old-school stripes','Tropical / island','Camo military night','Retro 90s','Blackout','Pink in the rink'],
   // Jersey silhouettes offered in step 1. The cards, the default (first entry)
   // and the id sent to the concept endpoint all read from this list.
+  // Three takes fired in parallel on "Show me the concept". Ids match VARIANTS
+  // in api/generate-concept.ts; the names label the thumbnails.
+  variants: [
+    {id:'safe',  name:'Conservative'},
+    {id:'bold',  name:'Bold'},
+    {id:'crest', name:'Alternate crest'},
+  ],
   styles: [
     {id:'laced', name:'Laced collar', note:'Traditional'},
     {id:'vneck', name:'V-neck',       note:'Modern'},
@@ -447,10 +455,10 @@ $('#logoRm').onclick=()=>{
 
 /* Shared by the first generation and by every refinement. baseImage is the
    concept being edited, or null to draw a new one from scratch. */
-async function askConcept(prompt,baseImage){
+async function askConcept(prompt,baseImage,variant){
   const res=await fetch(CFG.endpoint,{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({prompt,style:S.style,colors:S.colors,logo:S.logo?S.logo.data:null,baseImage:baseImage||null})
+    body:JSON.stringify({prompt,style:S.style,variant:variant||null,colors:S.colors,logo:S.logo?S.logo.data:null,baseImage:baseImage||null})
   });
   if(!res.ok){
     const msg=await res.json().then(d=>d&&d.error,()=>null);
@@ -479,29 +487,34 @@ function showError(err){
 }
 /* Every version generated this session is kept, so the customer can go back to
    an earlier one and refine from that instead. */
-function addVersion(image){
-  S.versions.push(image);
-  showVersion(S.versions.length-1);
+function addVersion(image,label,select){
+  S.versions.push({src:image,label:label||''});
+  if(select) showVersion(S.versions.length-1);
+  else drawVersions();
   $('#refine').hidden=false;
   $('#capture').hidden=false;
 }
 function showVersion(i){
-  S.vIndex=i;S.concept=S.versions[i];
+  S.vIndex=i;S.concept=S.versions[i].src;
   const cv=$('#canvas');
   cv.innerHTML='';
   const im=new Image();im.src=S.concept;im.alt='AI concept of your jersey';cv.append(im);
   drawVersions();
 }
+function versionName(v,i){
+  return v.label ? 'Design '+(i+1)+' — '+v.label : 'Design '+(i+1);
+}
 function drawVersions(){
   const box=$('#vers');
   box.innerHTML='';
-  S.versions.forEach((src,i)=>{
+  S.versions.forEach((v,i)=>{
+    const name=versionName(v,i);
     const b=document.createElement('button');
     b.type='button';
-    b.setAttribute('aria-label','Version '+(i+1));
+    b.setAttribute('aria-label',name);
     b.setAttribute('aria-current',i===S.vIndex?'true':'false');
-    b.title=i===S.vIndex?'Version '+(i+1)+' — showing now':'Version '+(i+1);
-    const im=new Image();im.src=src;im.alt='';b.append(im);
+    b.title=i===S.vIndex?name+' — showing now':name;
+    const im=new Image();im.src=v.src;im.alt='';b.append(im);
     b.onclick=()=>showVersion(i);
     box.append(b);
   });
@@ -511,17 +524,32 @@ function drawVersions(){
 $('#gen').onclick=async()=>{
   const prompt=$('#prompt').value.trim();
   if(!prompt){$('#prompt').focus();return;}
-  const btn=$('#gen');
+  const btn=$('#gen'), msg=$('#genMsg');
   btn.disabled=true;btn.textContent='Generating…';
-  showBusy('Drawing your concept');
-  try{
-    addVersion(await askConcept(prompt,null));
-  }catch(err){
-    showError(err);
-    drawVersions();   // an earlier version is still one click away
-  }finally{
-    btn.disabled=false;btn.textContent='Show me the concept';
+  msg.hidden=true;
+  showBusy('Drawing three concepts');
+
+  /* All three go at once and each is shown the moment it lands, so the first
+     one back fills the canvas instead of waiting on the slowest. One that
+     fails costs only its own option. */
+  let landed=0; const failed=[];
+  await Promise.all(CFG.variants.map(v=>
+    askConcept(prompt,null,v.id).then(
+      image=>{ addVersion(image,v.name,landed===0); landed++; },
+      err=>{ failed.push(err); }
+    )
+  ));
+
+  if(!landed){
+    showError(failed[0]||new Error('Something went wrong — try again in a moment.'));
+    drawVersions();   // an earlier design is still one click away
+  }else if(failed.length){
+    msg.className='saved bad';
+    msg.textContent=failed.length+' of the three didn\'t come back. Here '
+      +(landed===1?'is the one that did':'are the '+landed+' that did')+'.';
+    msg.hidden=false;
   }
+  btn.disabled=false;btn.textContent='Show me the concept';
 };
 
 $('#refineChips').querySelectorAll('button').forEach(b=>{
@@ -575,7 +603,7 @@ $('#refineBtn').onclick=async()=>{
   btn.disabled=true;btn.textContent='Refining…';
   showBusy('Making that change');
   try{
-    addVersion(await askConcept(prompt,from));
+    addVersion(await askConcept(prompt,from),'Refinement',true);
     $('#refinePrompt').value='';
   }catch(err){
     showError(err);

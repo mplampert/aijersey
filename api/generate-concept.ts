@@ -46,8 +46,24 @@ const STYLES: Record<string, string> = {
 };
 const DEFAULT_STYLE = "laced";
 
+// Three takes on the same brief, so the options the customer picks between
+// differ by intent rather than by chance. The brief, the colours and the
+// collar are identical across all three — only the treatment moves.
+// Keys match CFG.variants in index.html.
+const VARIANTS: Record<string, string> = {
+  safe:
+    "Play this one straight: a conservative, classic team jersey. Restrained striping, a traditional chest crest, nothing experimental.",
+  bold:
+    "Push this one: a bold, striking take on the same brief. Strong graphic striping or colour blocking and high contrast, still unmistakably a hockey jersey.",
+  crest:
+    "Keep the striping restrained and lead with the mark: a distinctly different chest crest concept — another way to symbolise the same brief — on an otherwise clean sweater.",
+};
+
 type Body = {
   prompt?: string;
+  // One of the keys of VARIANTS. Omitted on a refinement, and for anything
+  // unrecognised the brief is drawn straight with no variant steer.
+  variant?: string;
   // One of the keys of STYLES. Anything else falls back to DEFAULT_STYLE.
   style?: string;
   colors?: { name: string; hex: string }[];
@@ -139,6 +155,9 @@ export async function POST(request: Request): Promise<Response> {
     "Always produce a finished, well-composed jersey: balanced striping on the sleeves and hem, an original team crest or wordmark on the chest, and a design that looks like real teamwear.",
     "Design brief:",
     prompt,
+    // After the brief, so it steers the treatment without displacing what the
+    // customer actually asked for.
+    VARIANTS[body.variant ?? ""] ?? "",
   ]
     .filter(Boolean)
     .join(" ");
