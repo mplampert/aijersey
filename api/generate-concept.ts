@@ -81,7 +81,10 @@ export async function POST(request: Request): Promise<Response> {
   const instruction = [
     "Product photograph of a custom sublimated ice hockey jersey.",
     "Show the front view and the back view side by side, both flat and squarely front-on.",
+    "Both views are the same physical garment: stripe placement, yoke shape, sleeve design and colour blocking must match exactly between the front and the back.",
     "The back must show a nameplate and a large two-digit number.",
+    "The nameplate reads exactly NAME and the number is exactly 00 — these are placeholders, never an invented player name or number.",
+    "No branding of any kind: no manufacturer logos, brand names or brand marks, no neck or collar tags, no hem tags, anywhere on the jersey.",
     "Plain neutral light grey studio background, even lighting, no hanger, no model, no props.",
     colorLine,
     "Design brief:",
