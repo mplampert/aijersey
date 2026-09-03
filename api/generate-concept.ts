@@ -59,6 +59,15 @@ const VARIANTS: Record<string, string> = {
     "Keep the striping restrained and lead with the mark: a distinctly different chest crest concept — another way to symbolise the same brief — on an otherwise clean sweater.",
 };
 
+type Ref = { data: string; mediaType: string };
+
+/** A base64 data URL from the page, or null if it is missing or malformed. */
+function readDataUrl(value: string | null | undefined): Ref | null {
+  if (!value) return null;
+  const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/is.exec(value);
+  return m ? { mediaType: m[1], data: m[2] } : null;
+}
+
 type Body = {
   prompt?: string;
   // One of the keys of VARIANTS. Omitted on a refinement, and for anything
@@ -96,17 +105,18 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // Only data URLs — the browser sends back an image this function produced.
-  let base: { data: string; mediaType: string } | null = null;
-  if (body.baseImage) {
-    const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/is.exec(body.baseImage);
-    if (!m) {
-      return Response.json(
-        { error: "That concept couldn't be read. Generate a new one and refine from there." },
-        { status: 400 },
-      );
-    }
-    base = { mediaType: m[1], data: m[2] };
+  let base = readDataUrl(body.baseImage);
+  if (body.baseImage && !base) {
+    return Response.json(
+      { error: "That concept couldn't be read. Generate a new one and refine from there." },
+      { status: 400 },
+    );
   }
+
+  // The customer's own crest. An unreadable one is not worth failing over: the
+  // jersey is still drawn, just with an original crest instead.
+  const logo = readDataUrl(body.logo);
+  if (body.logo && !logo) console.warn("generate-concept: unreadable logo, ignoring it");
 
   const hit = BLOCKED.find((b) => prompt.toLowerCase().includes(b));
   if (hit) {
@@ -129,9 +139,8 @@ export async function POST(request: Request): Promise<Response> {
         .join(", ")}.`
     : "";
 
-  // NOTE: the page uploads a logo, but reference-image conditioning is
-  // model-specific and not wired yet. Front and back are requested in one
-  // image so the two views stay consistent with each other.
+  // Front and back are requested in one image so the two views stay consistent
+  // with each other. An uploaded logo is attached as a reference image below.
 
   // Every rule below holds for an edit too, so a refinement can't quietly
   // reintroduce branding or drift the two views apart.
@@ -142,6 +151,8 @@ export async function POST(request: Request): Promise<Response> {
     "The nameplate reads exactly NAME and the number is exactly 00 — these are placeholders, never an invented player name or number.",
     "No branding of any kind: no manufacturer logos, brand names or brand marks, no neck or collar tags, no hem tags, anywhere on the garment.",
     "Plain neutral light grey studio background, even lighting, no hanger, no model, no props.",
+    "Sharp, high-detail product photography, in focus from edge to edge.",
+    "No border, no frame, no vignette and no drop shadow box — the jersey fills the frame.",
   ];
 
   const instruction = [
@@ -152,7 +163,9 @@ export async function POST(request: Request): Promise<Response> {
     "The brief may be only a few words. Treat it as direction, not as the full specification:",
     "honour everything it does say, and design the rest yourself rather than leaving it plain or literal.",
     "Where the brief is silent on striping, crest, yoke, collar or layout, choose a clean conventional hockey design that suits the colors and mood given.",
-    "Always produce a finished, well-composed jersey: balanced striping on the sleeves and hem, an original team crest or wordmark on the chest, and a design that looks like real teamwear.",
+    logo
+      ? "Always produce a finished, well-composed jersey: balanced striping on the sleeves and hem, the supplied logo as the chest crest, and a design that looks like real teamwear."
+      : "Always produce a finished, well-composed jersey: balanced striping on the sleeves and hem, an original team crest or wordmark on the chest, and a design that looks like real teamwear.",
     "Design brief:",
     prompt,
     // After the brief, so it steers the treatment without displacing what the
@@ -173,6 +186,17 @@ export async function POST(request: Request): Promise<Response> {
   ]
     .filter(Boolean)
     .join(" ");
+
+  /* generateImage() takes a prompt and nothing else — ImageModelV2CallOptions
+     has no field for an input image, for any provider — so MODEL cannot be
+     shown the customer's crest. A generation carrying a logo therefore goes
+     through the multimodal model instead, the same one refinements use, with
+     the logo attached as a reference image. Without a logo nothing changes. */
+  const logoInstruction = [
+    instruction,
+    "The attached image is the team's own logo.",
+    "Reproduce it on the chest as the crest exactly as supplied: do not redraw it, restyle it, recolor it, crop it, change its proportions or add anything to it.",
+  ].join(" ");
 
   try {
     if (base) {
@@ -202,6 +226,33 @@ export async function POST(request: Request): Promise<Response> {
 
       return Response.json({
         image: `data:${edited.mediaType};base64,${edited.base64}`,
+      });
+    }
+
+    if (logo) {
+      const { files } = await generateText({
+        model: EDIT_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: logoInstruction },
+              { type: "file", data: logo.data, mediaType: logo.mediaType },
+            ],
+          },
+        ],
+      });
+
+      const drawn = files.find((f) => f.mediaType?.startsWith("image/"));
+      if (!drawn) {
+        return Response.json(
+          { error: "That didn't come back as an image. Try again in a moment." },
+          { status: 502 },
+        );
+      }
+
+      return Response.json({
+        image: `data:${drawn.mediaType};base64,${drawn.base64}`,
       });
     }
 
