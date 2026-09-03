@@ -109,6 +109,7 @@ textarea{resize:vertical;line-height:1.5}
 .pair{display:grid;gap:10px}
 .pair.has{grid-template-columns:1fr 1fr}
 .socks[hidden]{display:none}
+.socks canvas{width:100%;height:auto;display:block}
 .socks-hd{font-size:13px;color:var(--dim);text-align:center;margin:6px 0 0}
 .code{font-size:14.5px;color:var(--dim);margin:10px 0 0}
 .code[hidden]{display:none}
@@ -225,11 +226,11 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
           <div class="canvas" id="canvas">
             <p class="ph" id="ph">Your concept shows up here.</p>
           </div>
-          <div class="canvas socks" id="socks" hidden></div>
+          <div class="canvas socks" id="socks" hidden>
+            <canvas id="sockCv" width="1000" height="1000" role="img"
+                    aria-label="Matching socks in your team colors"></canvas>
+          </div>
         </div>
-
-        <button class="ghost" id="socksBtn" hidden>Show matching socks</button>
-        <p class="saved" id="socksMsg" hidden role="status"></p>
 
         <p class="code" id="codeMsg" hidden>Design code <b id="codeVal"></b></p>
 
@@ -499,6 +500,118 @@ function buildBrief(){
   return parts.join(', ')+'.';
 }
 
+/* ---------------- socks ---------------- */
+/* Composited from a fixed template instead of generated. The model kept
+   returning ankle socks with feet and heels however the prompt was worded, and
+   socks have nothing to invent anyway — no crest, no text, just color bands on
+   a fixed shape. No API call, no model, no cost, instant re-render.
+ *
+ * LIMITATION: the template carries one fixed stripe layout, so recoloring
+ * changes the colors, not the arrangement. The socks read as team colors
+ * rather than a copy of the jersey's exact striping. That is a deliberate
+ * trade for correctness and speed. */
+const SOCK = {
+  dir:'/sock/',
+  body:['part5','part1','band','cuffs'],   // takes the first color
+  bands:['part4','part2','part3'],         // takes the second
+  third:['part4'],                         // takes the third, when there is one
+  stitchDarken:0.62,                       // stitches darken whatever is under them
+  shade:{ambient:0.55,shadow:0.85,highlight:0.45},
+};
+
+const hx = h => [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+const clamp = v => v<0?0:v>255?255:v|0;
+
+/* Built once: a region id per pixel, plus what each stitch pixel sits on top
+   of, so recoloring is a single pass over a Uint8Array. */
+let sockTpl=null, sockLoad=null;
+function loadSock(){
+  if(sockTpl) return Promise.resolve(sockTpl);
+  if(sockLoad) return sockLoad;
+  sockLoad=(async()=>{
+    const idx=await fetch(SOCK.dir+'index.json').then(r=>r.json());
+    const N=idx.size, order=idx.order, px=N*N;
+    const scratch=document.createElement('canvas');
+    scratch.width=N;scratch.height=N;
+    const sx=scratch.getContext('2d',{willReadFrequently:true});
+    const gray=async name=>{
+      const im=await new Promise((ok,no)=>{
+        const i=new Image();i.onload=()=>ok(i);i.onerror=()=>no(new Error(name));i.src=SOCK.dir+name+'.png';
+      });
+      sx.clearRect(0,0,N,N);sx.drawImage(im,0,0);
+      const d=sx.getImageData(0,0,N,N).data, out=new Uint8Array(px);
+      for(let i=0,p=0;i<px;i++,p+=4) out[i]=d[p];
+      return out;
+    };
+    const region=new Uint8Array(px), under=new Uint8Array(px);
+    for(let r=0;r<order.length;r++){
+      const name=order[r], m=await gray('mask_'+name);
+      for(let i=0;i<px;i++) if(m[i]>127){
+        region[i]=r+1;                       // topmost region owns the pixel
+        if(name!=='stitches') under[i]=r+1;  // what the stitches lie on
+      }
+    }
+    sockTpl={size:N,order,region,under,shadow:await gray('shadows'),highlight:await gray('highlights')};
+    return sockTpl;
+  })();
+  return sockLoad;
+}
+
+function paintSocks(){
+  const t=sockTpl;
+  if(!t||!S.colors.length) return false;
+  const hex=S.colors.map(c=>c.hex);
+  const of={};
+  SOCK.body.forEach(r=>of[r]=hex[0]);
+  SOCK.bands.forEach(r=>of[r]=hex[1]||hex[0]);
+  if(hex[2]) SOCK.third.forEach(r=>of[r]=hex[2]);
+  const rgb=[[0,0,0]];
+  t.order.forEach(name=>rgb.push(hx(of[name]||hex[0])));
+
+  const N=t.size, cv=$('#sockCv'), ctx=cv.getContext('2d');
+  const img=ctx.createImageData(N,N), d=img.data;
+  const A=SOCK.shade.ambient, SH=SOCK.shade.shadow, HI=SOCK.shade.highlight, DK=SOCK.stitchDarken;
+  const stitch=t.order.indexOf('stitches')+1;
+  for(let i=0,p=0;i<N*N;i++,p+=4){
+    const r=t.region[i];
+    if(!r){ d[p+3]=0; continue; }            // alpha is the union of the masks
+    const c=r===stitch?rgb[t.under[i]||1]:rgb[r], k=r===stitch?DK:1;
+    const s=A+(t.shadow[i]/255)*SH, h=(t.highlight[i]/255)*255*HI;
+    d[p]  =clamp(c[0]*k*s+h);
+    d[p+1]=clamp(c[1]*k*s+h);
+    d[p+2]=clamp(c[2]*k*s+h);
+    d[p+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  return true;
+}
+
+/* Socks appear as soon as there are colors and repaint whenever they change. */
+async function renderSocks(){
+  if(!S.colors.length){
+    $('#socks').hidden=true;$('#pair').classList.remove('has');
+    return;
+  }
+  try{ await loadSock(); }
+  catch(err){ console.error('sock template failed to load',err); return; }
+  if(!paintSocks()) return;
+  $('#socks').hidden=false;
+  $('#pair').classList.add('has');
+  fileSocks();
+}
+
+/* Filed like any other design, once per jersey per palette. */
+function fileSocks(){
+  const v=S.vIndex<0?null:S.versions[S.vIndex];
+  if(!v||!sockTpl||!S.colors.length) return;
+  const sig=S.colors.map(c=>c.hex).join(',');
+  if(v.socksSig===sig) return;
+  v.socksSig=sig;
+  saveDesign($('#sockCv').toDataURL('image/png'),
+             'Socks — '+versionName(v,S.vIndex),
+             d=>{v.socksRecordId=d.id||null;});
+}
+
 /* Nobody generates a blank brief: a color has to be picked first. */
 function syncGen(){ $('#gen').disabled=!S.colors.length; }
 
@@ -538,10 +651,10 @@ $('#logoRm').onclick=()=>{
 
 /* Shared by the first generation and by every refinement. baseImage is the
    concept being edited, or null to draw a new one from scratch. */
-async function askConcept(prompt,baseImage,variant,product){
+async function askConcept(prompt,baseImage,variant){
   const res=await fetch(CFG.endpoint,{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({prompt,style:S.style,variant:variant||null,product:product||'jersey',colors:S.colors,logo:S.logo?S.logo.data:null,baseImage:baseImage||null})
+    body:JSON.stringify({prompt,style:S.style,variant:variant||null,colors:S.colors,logo:S.logo?S.logo.data:null,baseImage:baseImage||null})
   });
   if(!res.ok){
     const msg=await res.json().then(d=>d&&d.error,()=>null);
@@ -633,22 +746,7 @@ function showVersion(i){
   const im=new Image();im.src=S.concept;im.alt='AI concept of your jersey';cv.append(im);
   drawVersions();
   renderCode();
-  showSocks();
-}
-/* Socks hang off the design they were drawn from, so clicking back to another
-   design shows that one's socks — or the button to draw them. */
-function showSocks(){
-  const v=S.vIndex<0?null:S.versions[S.vIndex];
-  const box=$('#socks');
-  box.innerHTML='';
-  if(v&&v.socks){
-    const im=new Image();im.src=v.socks;im.alt='Socks matching your jersey';box.append(im);
-  }
-  box.hidden=!(v&&v.socks);
-  $('#pair').classList.toggle('has',!!(v&&v.socks));
-  $('#socksBtn').hidden=!v;
-  $('#socksBtn').textContent=v&&v.socks?'Redraw the socks':'Show matching socks';
-  $('#socksMsg').hidden=true;
+  fileSocks();
 }
 function versionName(v,i){
   return v.label ? 'Design '+(i+1)+' — '+v.label : 'Design '+(i+1);
@@ -710,35 +808,6 @@ $('#refineChips').querySelectorAll('button').forEach(b=>{
   };
 });
 
-$('#socksBtn').onclick=async()=>{
-  const v=S.vIndex<0?null:S.versions[S.vIndex];
-  if(!v)return;
-  const btn=$('#socksBtn'), msg=$('#socksMsg'), box=$('#socks');
-  msg.hidden=true;
-  btn.disabled=true;btn.textContent='Drawing socks…';
-  box.hidden=false;
-  box.innerHTML='<div><div class="spin"></div><p class="ph">Matching the socks</p></div>';
-  $('#pair').classList.add('has');
-  try{
-    /* Drawn from the selected jersey, never from the brief alone — that is the
-       only way the stripes come back in the same order. */
-    const image=await askConcept($('#prompt').value.trim(),v.src,null,'socks');
-    v.socks=image;
-    showSocks();
-    saveDesign(image,'Socks — '+versionName(v,S.vIndex),d=>{v.socksRecordId=d.id||null;});
-  }catch(err){
-    // The jersey selection is left exactly as it was.
-    showSocks();
-    msg.className='saved bad';
-    msg.textContent=err.message;
-    msg.hidden=false;
-  }finally{
-    btn.disabled=false;   // showSocks() has already set the label back
-  }
-};
-
-/* The design is already on file with a code by the time this button appears,
-   so the address is attached to that record rather than filing a second one. */
 $('#saveBtn').onclick=async()=>{
   const email=$('#saveEmail').value.trim();
   const msg=$('#saveMsg'), btn=$('#saveBtn');
@@ -800,6 +869,7 @@ CFG.card.forEach(([name,hex])=>{
     drawPicked();
     pushColors();
     syncGen();
+    renderSocks();
   };
   $('#pal').append(b);
 });
@@ -814,7 +884,7 @@ function drawPicked(){
     const s=document.createElement('span');s.textContent=c.name;
     const x=document.createElement('button');x.type='button';x.innerHTML='&times;';
     x.setAttribute('aria-label','Remove '+c.name);
-    x.onclick=()=>{S.colors=S.colors.filter(v=>v.hex!==c.hex);drawPicked();pushColors();syncGen();};
+    x.onclick=()=>{S.colors=S.colors.filter(v=>v.hex!==c.hex);drawPicked();pushColors();syncGen();renderSocks();};
     t.append(i,s,x);box.append(t);
   });
 }
