@@ -61,8 +61,10 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(
       {
         error:
-          `We can't build designs using "${hit}" — it's someone else's ` +
-          `trademark. Describe the look you want and we'll draw something original.`,
+          `We can't copy "${hit}" — that team or brand belongs to someone ` +
+          `else. Tell us the colours and the feel you're after — bold and ` +
+          `modern, old-school, dark and mean — and we'll build something ` +
+          `original for you.`,
       },
       { status: 422 },
     );
@@ -87,6 +89,10 @@ export async function POST(request: Request): Promise<Response> {
     "No branding of any kind: no manufacturer logos, brand names or brand marks, no neck or collar tags, no hem tags, anywhere on the jersey.",
     "Plain neutral light grey studio background, even lighting, no hanger, no model, no props.",
     colorLine,
+    "The brief may be only a few words. Treat it as direction, not as the full specification:",
+    "honour everything it does say, and design the rest yourself rather than leaving it plain or literal.",
+    "Where the brief is silent on striping, crest, yoke, collar or layout, choose a clean conventional hockey design that suits the colours and mood given.",
+    "Always produce a finished, well-composed jersey: balanced striping on the sleeves and hem, an original team crest or wordmark on the chest, and a design that looks like real teamwear.",
     "Design brief:",
     prompt,
   ]
