@@ -52,15 +52,16 @@ const DEFAULT_STYLE = "laced";
 
 // Three takes on the same brief, so the options the customer picks between
 // differ by intent rather than by chance. The brief, the colors and the
-// collar are identical across all three — only the treatment moves.
-// Keys match CFG.variants in index.html.
+// collar are identical across all three — what moves is how hard each one
+// leans on the print. None of them is a plain sweater: the quiet one is quiet
+// across the whole garment, not bare. Keys match CFG.variants in index.html.
 const VARIANTS: Record<string, string> = {
   safe:
-    "Play this one straight: a conservative, classic team jersey. Restrained striping, a traditional chest crest, nothing experimental.",
+    "Play this one restrained. The artwork still covers the whole garment, but keep it quiet: a subtle allover texture, a soft gradient through the body, or a single motif carried over the shoulders and down the sleeves. Understated is the brief here — plain is not.",
+  scene:
+    "Push this one as far as the process goes: a fully illustrated garment. Build a scene or an environment that wraps the front, the back, both sleeves and the shoulders as one continuous picture, with a background, a foreground and painted depth. This take should be obviously printed and impossible to sew.",
   bold:
-    "Push this one: a bold, striking take on the same brief. Strong graphic striping or color blocking and high contrast, still unmistakably a hockey jersey.",
-  crest:
-    "Keep the striping restrained and lead with the mark: a distinctly different chest crest concept — another way to symbolise the same brief — on an otherwise clean sweater.",
+    "Make this one graphic. Large-scale shapes, hard-edged color blocking, oversized motifs or angular forms running off the edges of the garment at full bleed, printed right through the sleeves and hem. High contrast and poster-like, still unmistakably a hockey jersey.",
 };
 
 type Ref = { data: string; mediaType: string };
@@ -215,10 +216,15 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // Naming the matched colors constrains the model to the factory's card.
+  // Shades and blends are allowed through deliberately: sublimation prints
+  // gradients for free, and "use only these colors" reads to a model as a
+  // flat-fill instruction, which is half of why the concepts came back looking
+  // sewn. The constraint that matters is the hue, not the number of tones.
   const colorLine = body.colors?.length
-    ? `Use only these colors: ${body.colors
+    ? `Build the design from these colors: ${body.colors
         .map((c) => `${c.name} (${c.hex})`)
-        .join(", ")}.`
+        .join(", ")}. Tints, shades, blends and gradients between them are ` +
+      `encouraged; do not introduce a hue that is not on this list.`
     : "";
 
   // Front and back are requested in one image so the two views stay consistent
@@ -228,9 +234,11 @@ export async function POST(request: Request): Promise<Response> {
   // reintroduce branding or drift the two views apart.
   const RULES = [
     STYLES[body.style ?? ""] ?? STYLES[DEFAULT_STYLE],
+    "This is a fully sublimated garment: its artwork is printed into the fabric and may cover any part of it. Printed detail, gradients, illustration and edge-to-edge graphics are correct for this process and must never be flattened into plain panels or stitched-looking stripes.",
     "Both views are the same physical garment: stripe placement, yoke shape, sleeve design and color blocking must match exactly between the front and the back.",
     "The back must show a nameplate and a large two-digit number.",
     "The nameplate reads exactly NAME and the number is exactly 00 — these are placeholders, never an invented player name or number.",
+    "The nameplate and the number must stay clearly legible against whatever artwork sits behind them.",
     "Exactly one number on each sleeve, high on the upper arm. Never two numbers stacked on the same sleeve, and never more than one number per sleeve.",
     "No branding of any kind: no manufacturer logos, brand names or brand marks, no neck or collar tags, no hem tags, anywhere on the garment.",
     "No league logos, league shields, league crests or any real-world sports league marks anywhere on the garment — not on the chest, not on the collar, not on the back neck, not on the hem.",
@@ -239,17 +247,34 @@ export async function POST(request: Request): Promise<Response> {
     "No border, no frame, no vignette and no drop shadow box — the jersey fills the frame.",
   ];
 
+  /* Generation only, never an edit — an edit is told to change one thing, and
+     these lines would have it redesign the garment instead.
+
+     Image models are trained on photographs of real hockey sweaters, which are
+     overwhelmingly sewn twill: a solid body, a stitched stripe set, an appliqué
+     crest. Left alone the model reproduces that, which is the one thing this
+     process is not. Full-body artwork is the reason a customer picks
+     sublimation, so the brief has to say so in as many words. */
+  const SUBLIMATION = [
+    "The artwork is printed into the fabric across the entire garment. There are no sewn panels, no appliqué and no stitched stripes to design around, and no part of the jersey is off limits to the print.",
+    "Treat the whole garment as one continuous canvas: the design runs edge to edge across the chest and the back, over both sleeves, across the shoulders and the yoke, around the sides and through the hem. Do not treat the body as a plain field with a crest sitting on it.",
+    "Illustrated scenes, environments, allover patterns, gradients, fades, textures and large graphic elements that wrap around the garment are all available, and the design should use them wherever the brief suits it.",
+    "This process has no color limit and no separation cost, so smooth gradients, blends and photographic detail are free. Use them rather than flattening the design into flat blocks of solid color.",
+    "The finished design must be impossible to produce in sewn twill. If it could be built from a solid body, a few stitched stripes and an appliqué patch, it is wrong — redesign it with artwork that carries the whole garment.",
+  ];
+
   const instruction = [
     "Product photograph of a custom sublimated ice hockey jersey.",
     "Show the front view and the back view side by side, both flat and squarely front-on.",
+    ...SUBLIMATION,
     ...RULES,
     colorLine,
     "The brief may be only a few words. Treat it as direction, not as the full specification:",
     "honour everything it does say, and design the rest yourself rather than leaving it plain or literal.",
-    "Where the brief is silent on striping, crest, yoke, collar or layout, choose a clean conventional hockey design that suits the colors and mood given.",
+    "Where the brief is silent on subject, pattern, layout or striping, invent something that suits the colors and the mood it does give, and carry it across the whole garment. Silence is room to design, not a reason to leave the jersey plain.",
     ownCrest
-      ? "Leave the chest completely empty: no crest, no logo, no wordmark, no monogram, no graphic and no lettering of any kind in the chest area, which must be plain fabric in the jersey's own colors. The team's own crest is added afterwards."
-      : "Always produce a finished, well-composed jersey: balanced striping on the sleeves and hem, an original team crest or wordmark on the chest, and a design that looks like real teamwear.",
+      ? "Leave the centre chest clear for the team's own crest, which is added afterwards: no crest, no logo, no wordmark, no monogram, no graphic element and no lettering of any kind there. The artwork still covers the rest of the garment, but it must settle into a calm, uncluttered area at the centre chest so a crest can sit on top of it and still read."
+      : "Always produce a finished, well-composed jersey: artwork that carries the whole garment and reads from across the rink, an original team crest or wordmark on the chest, and something that still reads unmistakably as real teamwear.",
     "Design brief:",
     prompt,
     // After the brief, so it steers the treatment without displacing what the
