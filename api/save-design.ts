@@ -34,6 +34,7 @@ const FIELD = {
   session: "fldNJ7GYCybw4OAuf",
   created: "fld5rM5os7ZFssjJS",
   email: "fldizSNmZ7eJrsGgL",
+  phone: "flduSOZr6r0zh1gu1",
   kit: "fldsqik6ZInUTnwKM",
   roster: "fldySSOUbQIBBObQQ",
   rosterCount: "fldXNT5mBgEYudtYW",
@@ -72,6 +73,9 @@ type Body = {
   style?: string | string[];
   variant?: string;
   colors?: { name: string; hex: string }[];
+  // Optional, and stored E.164. Sent from the design step's capture and from
+  // the account details at checkout; both patch the same record by id.
+  phone?: string;
   // The matching kit the customer said yes to, by Airtable option name. None
   // of these is previewed — they are confirmed on the factory proof.
   kit?: string[];
@@ -191,6 +195,18 @@ async function retryAttachments(
 // Deliberately loose. The real check is whether the mail lands.
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+/**
+ * Loose on the way in, strict on the way out. Everything but the digits is
+ * thrown away, a leading country 1 is dropped, and what is left has to be a
+ * dialable NANP number — area code and exchange can't start with 0 or 1 — or
+ * it is refused. A number nobody can text is worse than an empty field.
+ */
+function normalPhone(value: string): string | null {
+  const digits = value.replace(/\D/g, "");
+  const ten = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  return /^[2-9]\d{2}[2-9]\d{6}$/.test(ten) ? `+1${ten}` : null;
+}
+
 function unconfigured(keys: string[]): Response | null {
   const missing = keys.filter((k) => !process.env[k]);
   if (!missing.length) return null;
@@ -273,6 +289,18 @@ export async function POST(request: Request): Promise<Response> {
         );
       }
       fields[FIELD.email] = email;
+    }
+    if (body.phone !== undefined) {
+      const typed = (body.phone || "").trim();
+      const phone = normalPhone(typed);
+      if (typed && !phone) {
+        return Response.json(
+          { error: "That doesn't look like a US phone number — check it, or leave it blank." },
+          { status: 400 },
+        );
+      }
+      // A blank box shouldn't wipe a number already on record, same as Team.
+      if (phone) fields[FIELD.phone] = phone;
     }
     // The page sends the palette back through here whenever it changes, so a
     // record written before the customer settled on their colors still ends

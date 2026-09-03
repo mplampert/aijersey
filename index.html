@@ -187,6 +187,10 @@ section{
 .note{color:var(--ice-3);font-size:var(--t-sm);margin:0 0 16px}
 
 label.fld,.fld{display:block;font-weight:600;font-size:var(--t-sm);margin:16px 0 6px;color:var(--ice)}
+.opt{
+  font-weight:600;font-stretch:88%;font-size:var(--t-xs);letter-spacing:.15em;
+  text-transform:uppercase;color:var(--ice-3);margin-left:7px;
+}
 .styles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .styles.four{grid-template-columns:repeat(4,1fr)}
 .styles.two{grid-template-columns:repeat(2,1fr)}
@@ -203,7 +207,7 @@ label.fld,.fld{display:block;font-weight:600;font-size:var(--t-sm);margin:16px 0
 .styles button i{display:block;font-style:normal;color:var(--ice-3);font-size:13px;margin-top:2px}
 .styles button[aria-pressed=true]{border-color:var(--crease);background:#12384f;color:var(--crease)}
 .styles button[aria-pressed=true] i{color:var(--crease)}
-textarea,input[type=text],input[type=email],input[type=password],select{
+textarea,input[type=text],input[type=email],input[type=tel],input[type=password],select{
   width:100%;padding:11px 12px;border:1px solid var(--seam);border-radius:var(--rad);
   font:inherit;background:var(--boards-hi);color:var(--ice);
 }
@@ -587,6 +591,10 @@ footer{
           <p class="note">The link and the code are all there is &mdash; there&rsquo;s no account to log
             back into. Leave your address and we can send the design back to you if you lose them.</p>
           <input type="email" id="saveEmail" placeholder="you@yourteam.com" autocomplete="email">
+          <label class="fld" for="savePhone">Phone <span class="opt">Optional</span></label>
+          <p class="note">So we can text you when your proof is ready.</p>
+          <input type="tel" inputmode="numeric" id="savePhone"
+                 placeholder="(555) 234-5678" autocomplete="tel">
           <button class="ghost" id="saveBtn">Save this design for me</button>
           <p class="saved" id="saveMsg" hidden role="status"></p>
         </div>
@@ -696,6 +704,7 @@ footer{
       <div><label class="fld" for="team">Team or organisation</label><input type="text" id="team" placeholder="Beverly Bandits"></div>
       <div><label class="fld" for="contact">Your name</label><input type="text" id="contact"></div>
       <div><label class="fld" for="email">Email</label><input type="email" id="email" placeholder="you@team.com"></div>
+      <div><label class="fld" for="phone">Phone <span class="opt">Optional</span></label><input type="tel" inputmode="numeric" id="phone" placeholder="(555) 234-5678" autocomplete="tel"></div>
       <div><label class="fld" for="pw">Password</label><input type="password" id="pw" autocomplete="new-password"></div>
     </div>
 
@@ -1132,6 +1141,24 @@ function renderCode(){
   $('#shareMsg').hidden=true;
 }
 
+/* Loose on the way in, strict on the way out. Somebody typing (555) 123-4567,
+   555-123-4567 or 15551234567 means the same number and all three are taken;
+   anything that isn't a dialable US number comes back null and is never sent,
+   because a number we can't text is worse than no number at all. */
+function normalPhone(value){
+  const digits=(value||'').replace(/\D/g,'');
+  const ten = digits.length===11 && digits[0]==='1' ? digits.slice(1) : digits;
+  return /^[2-9]\d{2}[2-9]\d{6}$/.test(ten) ? '+1'+ten : null;
+}
+
+/* Typed once in the design step, already there at checkout — until the
+   customer edits the order one, after which it is theirs and stays put. */
+let phoneEdited=false;
+$('#phone').oninput=()=>{phoneEdited=true;pushOrder();};
+$('#savePhone').oninput=()=>{
+  if(!phoneEdited) $('#phone').value=$('#savePhone').value;
+};
+
 /* ---------------- sharing ---------------- */
 /* A design code in the address bar opens that design straight into the canvas,
    so a captain sends one link and the team sees the jersey. Link-based only:
@@ -1286,12 +1313,21 @@ $('#saveBtn').onclick=async()=>{
   if(!v)return;
   msg.hidden=true;
   if(!email){$('#saveEmail').focus();return;}
+  // Optional, so an empty box is fine — but a filled one has to be a real
+  // number, said here rather than silently dropped on the way to Airtable.
+  const typed=$('#savePhone').value.trim();
+  const phone=normalPhone(typed);
+  if(typed&&!phone){
+    msg.className='saved bad';
+    msg.textContent='That doesn\u2019t look like a US phone number \u2014 check it, or leave it blank.';
+    msg.hidden=false;$('#savePhone').focus();return;
+  }
   btn.disabled=true;btn.textContent='Saving…';
   try{
     if(!v.recordId) throw new Error('We couldn\'t file this design, so there\'s nothing to attach your address to. Generate it again and we\'ll pick it up.');
     const res=await fetch(CFG.saveEndpoint,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({recordId:v.recordId,email})
+      body:JSON.stringify(phone?{recordId:v.recordId,email,phone}:{recordId:v.recordId,email})
     }).catch(()=>{
       throw new Error('We couldn\'t reach the server — check your connection and try again.');
     });
@@ -1553,6 +1589,10 @@ function pushOrder(){
     kit:kitChosen().map(k=>k.option),
     team:$('#team').value
   };
+  // Only once it is dialable: this one fires on every keystroke, and a
+  // half-typed number must not fail the patch the roster is riding on.
+  const phone=normalPhone($('#phone').value);
+  if(phone) body.phone=phone;
   clearTimeout(orderPush);
   orderPush=setTimeout(()=>{
     fetch(CFG.saveEndpoint,{
