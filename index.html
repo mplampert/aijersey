@@ -38,7 +38,7 @@
      is set expanded and tight the way arena signage and a jersey wordmark are,
      and small labels are set narrow and tracked. There is no second face. */
   --font:"Archivo","Archivo Fallback",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --t-hero:clamp(38px,6.1vw,72px);
+  --t-hero:clamp(36px,5.3vw,62px);
   --t-h2:clamp(23px,2.5vw,29px);
   --t-h3:19px;
   --t-lede:clamp(17px,1.6vw,19.5px);
@@ -75,46 +75,52 @@ header{
     radial-gradient(130% 95% at 50% 0%,#12283a 0%,rgba(18,40,58,0) 64%),
     var(--bowl);
   border-bottom:3px solid var(--tape);
-  padding:clamp(26px,3.6vw,44px) 20px clamp(34px,5vw,56px);
+  padding:clamp(18px,2.2vw,26px) 20px clamp(20px,2.6vw,30px);
 }
 .wrap{max-width:1080px;margin:0 auto}
 .brand{
   font-weight:900;font-stretch:125%;font-size:clamp(23px,2.7vw,31px);
   letter-spacing:-.035em;text-transform:uppercase;color:var(--ice);
-  line-height:1;margin:0 0 clamp(30px,4.4vw,52px);
+  line-height:1;margin:0 0 clamp(20px,2.6vw,30px);
 }
 .brand i{font-style:normal;color:var(--tape)}
 .eyebrow{
   margin:0 0 15px;font-weight:600;font-stretch:88%;font-size:var(--t-xs);
   letter-spacing:.19em;text-transform:uppercase;color:var(--ice-3);
 }
-header h1{font-size:var(--t-hero);line-height:.99;margin:0;max-width:17ch}
+header h1{font-size:var(--t-hero);line-height:.98;margin:0;max-width:19ch}
 .lede{
-  margin:19px 0 0;max-width:58ch;font-size:var(--t-lede);line-height:1.5;
+  margin:15px 0 0;max-width:58ch;font-size:var(--t-lede);line-height:1.5;
   color:var(--ice-2);
 }
 .cta-link{
-  display:inline-block;margin-top:26px;background:var(--crease);color:var(--bowl);
+  display:inline-block;margin-top:20px;background:var(--crease);color:var(--bowl);
   border:0;border-radius:var(--rad);padding:14px 26px;text-decoration:none;
   font-weight:800;font-stretch:112%;font-size:17px;letter-spacing:-.01em;cursor:pointer;
 }
 .cta-link:hover{background:var(--crease-lo)}
 .hero-kits{
-  display:grid;grid-template-columns:repeat(3,1fr);
-  gap:clamp(9px,1.7vw,20px);margin-top:clamp(30px,4.4vw,50px);
+  /* Columns in proportion to each render's own ratio — 3:2, 3:2 and square —
+     so all three come out the same height with nothing cropped and nothing
+     letterboxed. Equal columns leave the square one hanging half a jersey
+     below the others. Swap a file for a different shape and these want
+     revisiting; the fallback is a ragged row, not a broken one. */
+  display:grid;grid-template-columns:1.5fr 1.5fr 1fr;
+  gap:clamp(9px,1.7vw,20px);margin-top:clamp(22px,3vw,34px);
 }
-/* The render is the loudest thing on the page: a pale studio sweep, lit off
-   the ice. The panel and the image ground are the same value, so the jersey
-   stands on the panel instead of looking pasted onto it. */
-.hero-kits figure{
-  margin:0;background:#eef1f4;border-radius:var(--rad);overflow:hidden;
-  box-shadow:0 0 0 1px var(--seam),0 26px 64px -26px var(--crease-glow);
-}
-.hero-kits img{width:100%;height:auto}
-.hero-kits figcaption{
-  padding:9px 12px 11px;background:var(--boards);color:var(--ice-3);
-  font-weight:600;font-stretch:88%;font-size:var(--t-xs);
-  letter-spacing:.15em;text-transform:uppercase;text-align:center;
+/* No card around them: every render arrives on its own pale studio sweep, so
+   against this page each one is already a lit panel. Natural ratio, nothing
+   cropped and nothing letterboxed — the picture is the whole point. */
+.hero-kits img{width:100%;height:auto;border-radius:var(--rad)}
+
+/* ---------- gallery ---------- */
+/* Columns rather than a grid: the renders come back both 3:2 and square, and
+   rows of a grid would leave a ragged edge under every landscape one. Reading
+   order runs down a column instead of across, which costs nothing here. */
+.gallery{columns:4;column-gap:clamp(8px,1.3vw,15px)}
+.gallery img{
+  width:100%;height:auto;border-radius:var(--rad);
+  margin-bottom:clamp(8px,1.3vw,15px);break-inside:avoid;
 }
 
 /* ---------- the sell ---------- */
@@ -122,12 +128,12 @@ header h1{font-size:var(--t-hero);line-height:.99;margin:0;max-width:17ch}
    the designer, so the page reads as a story that turns into a tool. */
 .sell{
   background:0;border:0;border-top:1px solid var(--seam-lo);border-radius:0;
-  margin-top:0;padding:clamp(34px,4.4vw,54px) 0 clamp(6px,1vw,12px);
+  margin-top:0;padding:clamp(18px,2.1vw,26px) 0 clamp(2px,.5vw,6px);
 }
-.sell h2{font-size:var(--t-h2);margin:0 0 clamp(16px,2vw,24px)}
+.sell h2{font-size:var(--t-h2);margin:0 0 clamp(12px,1.4vw,17px)}
 .sell h3{font-size:var(--t-h3);font-weight:700;font-stretch:106%;margin:0 0 5px}
 
-.how{list-style:none;margin:0;padding:0;display:grid;gap:clamp(16px,2.6vw,30px);grid-template-columns:repeat(3,1fr)}
+.how{list-style:none;margin:0;padding:0;display:grid;gap:clamp(14px,2vw,24px);grid-template-columns:repeat(3,1fr)}
 .how li{border-top:2px solid var(--crease);padding-top:14px}
 .how .n{
   display:block;font-weight:700;font-stretch:88%;font-size:var(--t-xs);
@@ -137,7 +143,7 @@ header h1{font-size:var(--t-hero);line-height:.99;margin:0;max-width:17ch}
 .how p{margin:0;color:var(--ice-2);font-size:var(--t-sm)}
 
 .incl{list-style:none;margin:0;padding:0;max-width:660px}
-.incl li{display:flex;justify-content:space-between;gap:18px;padding:13px 0;border-bottom:1px solid var(--seam-lo)}
+.incl li{display:flex;justify-content:space-between;gap:18px;padding:10px 0;border-bottom:1px solid var(--seam-lo)}
 .incl b{color:var(--ice);font-weight:600}
 .incl small{display:block;color:var(--ice-3);font-size:14px}
 .incl .price{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ice);white-space:nowrap}
@@ -146,10 +152,23 @@ header h1{font-size:var(--t-hero);line-height:.99;margin:0;max-width:17ch}
 .why{max-width:60ch;font-size:var(--t-lede);line-height:1.55;color:var(--ice-2);margin:0}
 
 .faq{max-width:760px}
-.faq div{border-top:1px solid var(--seam-lo);padding:17px 0}
+.faq div{border-top:1px solid var(--seam-lo);padding:13px 0}
 .faq div:first-child{border-top:0;padding-top:0}
 .faq p{margin:0;color:var(--ice-2);font-size:var(--t-sm)}
-.faq .cta-link{margin-top:28px}
+.faq .cta-link{margin-top:22px}
+
+/* Appears once the hero is behind you and gets out of the way the moment the
+   designer is actually on screen. */
+.jump{
+  position:fixed;right:18px;bottom:18px;z-index:20;
+  background:var(--crease);color:var(--bowl);text-decoration:none;
+  border-radius:100px;padding:12px 20px;
+  font-weight:800;font-stretch:112%;font-size:15px;letter-spacing:-.01em;
+  box-shadow:0 10px 30px -10px rgba(3,8,13,.8);
+}
+.jump:hover{background:var(--crease-lo)}
+.jump[hidden]{display:none}
+@media(max-width:560px){.jump{right:14px;bottom:14px}}
 
 /* ---------- steps ---------- */
 main{max-width:1080px;margin:0 auto;padding:0 20px 60px}
@@ -432,9 +451,9 @@ footer{
 <body>
 
 <!-- HERO ..................................................................
-     Placeholder renders live in public/hero/. Drop the real files in at the
-     same three paths, same 4:5 portrait crop on a pale studio sweep, and
-     nothing in here needs to change. -->
+     Real renders, in public/hero/. These three are named here rather than
+     read from CFG so they load with the page instead of waiting on the
+     script; the gallery and the canvas example both work off the CFG list. -->
 <header>
   <div class="wrap">
     <p class="brand">Marty<i>&rsquo;</i>s</p>
@@ -445,21 +464,12 @@ footer{
     <a class="cta-link" href="#designer">Design your jersey</a>
 
     <div class="hero-kits">
-      <figure>
-        <img src="/public/hero/jersey-01.png" width="1000" height="1250"
-             alt="Finished jersey render — navy with gold and white stripe sets">
-        <figcaption>Classic</figcaption>
-      </figure>
-      <figure>
-        <img src="/public/hero/jersey-02.png" width="1000" height="1250"
-             alt="Finished jersey render — black with scarlet and white stripe sets">
-        <figcaption>Bold</figcaption>
-      </figure>
-      <figure>
-        <img src="/public/hero/jersey-03.png" width="1000" height="1250"
-             alt="Finished jersey render — kelly green with cream stripe sets">
-        <figcaption>Retro</figcaption>
-      </figure>
+      <img src="/public/hero/hero-1.png" width="1536" height="1024"
+           alt="Sublimated jersey concept, front and back views">
+      <img src="/public/hero/hero-2.png" width="1536" height="1024"
+           alt="Sublimated jersey concept, front and back views">
+      <img src="/public/hero/hero-3.png" width="1024" height="1024"
+           alt="Sublimated jersey concept, front and back views">
     </div>
   </div>
 </header>
@@ -540,11 +550,12 @@ footer{
 
     <div class="designer">
       <div>
-        <!-- Opens on an example so the biggest thing on the page is a jersey
-             rather than an empty box. Any of the hero renders works here; it is
-             replaced wholesale by the first real concept, label and all. -->
+        <!-- Opens on a real jersey rather than an empty box, and rotates
+             through the rest of them. Replaced wholesale by the first real
+             concept, label and all. -->
         <div class="canvas" id="canvas">
-          <img src="/public/hero/jersey-01.png" alt="Example of a finished jersey concept">
+          <img id="exampleImg" src="/public/hero/hero-1.png"
+               alt="Example of a finished jersey concept">
           <span class="example-tag">Example</span>
         </div>
 
@@ -692,7 +703,18 @@ footer{
     <p class="msg" id="coMsg"></p>
   </section>
 
+  <!-- GALLERY .............................................................
+       Below the designer on purpose: somebody who arrived ready to design
+       shouldn't have to scroll past eight pictures to reach the thing, and
+       somebody who needs convincing will keep going. -->
+  <section class="sell">
+    <h2>Made with Marty&rsquo;s</h2>
+    <div class="gallery" id="gallery"></div>
+  </section>
+
 </main>
+
+<a class="jump" id="jump" href="#designer" hidden>Design yours</a>
 
 <footer>Proof in 48 hours &middot; nothing built until you approve it</footer>
 
@@ -736,6 +758,16 @@ const CFG = {
   // somebody who just wants to see something can press it on arrival, and the
   // card is right there for anyone who cares which colors they get.
   defaultColors: ['Navy','White'],
+  // The real jersey renders, in public/hero/. Add a file to this list and it
+  // appears in the gallery and in the canvas example rotation. The hero's
+  // three are named in the markup instead, so they load with the page rather
+  // than waiting on this script to run.
+  heroDir: '/public/hero/',
+  heroImages: [
+    'hero-1.png','hero-2.png','hero-3.png','hero-4.png',
+    'hero-5.png','hero-6.png','hero-7.png','hero-8.png',
+  ],
+  exampleEvery: 5000,   // ms the canvas holds each example before the next
   // Factory-matched color card. Swap these for your real swatches.
   card: [
     ['White','#ffffff'],['Silver','#c9ccd1'],['Steel','#8b9199'],['Graphite','#4a5058'],
@@ -802,6 +834,53 @@ $('#incl').innerHTML =
             `<span class="price">${money(r.price)} each</span></li>`).join('');
 $('#inclMoq').textContent = CFG.moq;
 $('#faqMoq').textContent  = CFG.moq;
+
+/* Every render, straight off the one list in CFG. Lazy: these are big files
+   and they sit below the designer, so nobody pays for them on arrival. */
+$('#gallery').innerHTML = CFG.heroImages.map(f=>
+  `<img src="${CFG.heroDir}${f}" alt="A jersey made with Marty's" loading="lazy" decoding="async">`
+).join('');
+
+/* The canvas opens on a real jersey and works through the rest of them, so the
+   most valuable space on the page shows what this makes before anyone has been
+   asked for anything. The first real concept rewrites the whole canvas, label
+   and all, which is also what stops this. */
+if(CFG.heroImages.length>1){
+  let at=0;
+  const rotate=setInterval(()=>{
+    if(!$('#exampleImg')){ clearInterval(rotate); return; }
+    const next=new Image();
+    next.src=CFG.heroDir+CFG.heroImages[(at+1)%CFG.heroImages.length];
+    // Swapped only once the next one has decoded, so the frame never blinks.
+    next.onload=()=>{
+      const live=$('#exampleImg');
+      if(live){ at=(at+1)%CFG.heroImages.length; live.src=next.src; }
+    };
+  },CFG.exampleEvery);
+}
+
+/* Both ways in land on the designer itself rather than somewhere near it. */
+document.querySelectorAll('a[href="#designer"]').forEach(a=>{
+  a.onclick=e=>{
+    e.preventDefault();
+    $('#designer').scrollIntoView({
+      behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',
+      block:'start'
+    });
+  };
+});
+
+/* The floating way in: shown once the hero is behind you, hidden again the
+   moment the designer is on screen and the button would be arguing with it. */
+if('IntersectionObserver' in window){
+  const jump=$('#jump');
+  let heroGone=false, designerHere=false;
+  const sync=()=>{ jump.hidden = !heroGone || designerHere; };
+  new IntersectionObserver(([e])=>{heroGone=!e.isIntersecting;sync();})
+    .observe(document.querySelector('header'));
+  new IntersectionObserver(([e])=>{designerHere=e.isIntersecting;sync();})
+    .observe($('#designer'));
+}
 
 /* ---------------- 1. design ---------------- */
 /* Chips toggle terms in and out of the prompt. The prompt text is the single
