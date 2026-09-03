@@ -3,81 +3,195 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Design your team's jerseys</title>
+<title>Marty's — custom sublimated hockey jerseys</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" rel="stylesheet">
 <style>
 :root{
-  --board:#0f2c4d;      /* rink board blue */
-  --board-lo:#16406e;
-  --ice:#e8eef2;
-  --ice-lo:#f6f8f9;
-  --puck:#14171a;
-  --tape:#f2c230;       /* stick tape yellow — accent, used once per view */
-  --line:#c8d4dc;
-  --dim:#5d6b76;
-  --bad:#b3231f;
-  --ok:#1f7a4d;
+  /* Rink at ice level, house lights down. The ice is the only lit surface in
+     the building, the dasher boards catch its spill, and the one warm thing in
+     the room is a roll of stick tape. No neutral greys: every dark here carries
+     the blue that arena light throws onto cold ice, which is what leaves a
+     jersey render on its pale studio sweep the loudest thing on the page. */
+  --bowl:#060f18;        /* the stands past the glass — page ground */
+  --boards:#0d1a26;      /* dasher boards — the panels the designer sits on */
+  --boards-hi:#152a3c;   /* a board taking light off the ice — fields, buttons */
+  --boards-lo:#0a1520;   /* recessed: footer, drop zone */
+  --seam:#22405a;        /* the seam between two boards — borders */
+  --seam-lo:#17303f;     /* the same seam, further from the light */
+
+  --ice:#eef6fb;         /* fresh sheet under the lights — headings, input text */
+  --ice-2:#b8cede;       /* body copy */
+  --ice-3:#8ba6be;       /* captions and helper text */
+  --dim:#8ba6be;         /* alias for --ice-3: referenced inline in the markup */
+
+  --crease:#5cc8f5;      /* crease blue — every interactive thing */
+  --crease-lo:#31afe6;
+  --crease-glow:rgba(92,200,245,.22);
+  --tape:#ffcf2e;        /* stick tape. Three uses on the page, and no more:
+                            the kickplate rule, the wordmark, the caution note */
+  --goal:#ff5a63;        /* the lamp behind the net — errors only */
+  --ok:#4fd8a4;
+
+  /* One family. Archivo carries a width axis as well as weight, so display type
+     is set expanded and tight the way arena signage and a jersey wordmark are,
+     and small labels are set narrow and tracked. There is no second face. */
+  --font:"Archivo","Archivo Fallback",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --t-hero:clamp(38px,6.1vw,72px);
+  --t-h2:clamp(23px,2.5vw,29px);
+  --t-h3:19px;
+  --t-lede:clamp(17px,1.6vw,19.5px);
+  --t-body:16px;
+  --t-sm:14.5px;
+  --t-xs:12.5px;
   --rad:5px;
 }
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+/* Native selects, checkboxes and scrollbars follow the page instead of
+   punching white holes through it. */
+:root{color-scheme:dark}
 body{
-  margin:0;background:var(--ice-lo);color:var(--puck);
-  font:400 16px/1.55 "Barlow",system-ui,sans-serif;
+  margin:0;background:var(--bowl);color:var(--ice-2);
+  font:400 var(--t-body)/1.6 var(--font);
+  -webkit-font-smoothing:antialiased;
 }
-h1,h2,h3,.disp{font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:700;letter-spacing:.005em}
+h1,h2,h3,.disp{
+  font-family:var(--font);font-weight:800;font-stretch:112%;
+  letter-spacing:-.021em;color:var(--ice);
+}
 img{max-width:100%;display:block}
 button{font:inherit}
+b,strong{font-weight:600;color:var(--ice)}
 
-/* ---------- masthead ---------- */
+/* ---------- hero ---------- */
+/* Nothing is asked for above this line. The renders do the selling, so they
+   take the light and everything else stays quiet. Dasher boards carry a yellow
+   kickplate along their bottom edge; so does this. */
 header{
-  background:var(--board);color:#fff;padding:18px 20px 20px;
-  border-bottom:5px solid var(--tape);
+  background:
+    radial-gradient(130% 95% at 50% 0%,#12283a 0%,rgba(18,40,58,0) 64%),
+    var(--bowl);
+  border-bottom:3px solid var(--tape);
+  padding:clamp(26px,3.6vw,44px) 20px clamp(34px,5vw,56px);
 }
 .wrap{max-width:1080px;margin:0 auto}
-.brand{font-family:"Barlow Condensed";font-weight:700;font-size:19px;letter-spacing:.06em;text-transform:uppercase}
-header h1{font-size:clamp(30px,7vw,50px);line-height:1.02;margin:14px 0 8px;max-width:22ch}
-header p{margin:0;max-width:52ch;color:#c3d3e2;font-size:16.5px}
+.brand{
+  font-weight:900;font-stretch:125%;font-size:clamp(23px,2.7vw,31px);
+  letter-spacing:-.035em;text-transform:uppercase;color:var(--ice);
+  line-height:1;margin:0 0 clamp(30px,4.4vw,52px);
+}
+.brand i{font-style:normal;color:var(--tape)}
+.eyebrow{
+  margin:0 0 15px;font-weight:600;font-stretch:88%;font-size:var(--t-xs);
+  letter-spacing:.19em;text-transform:uppercase;color:var(--ice-3);
+}
+header h1{font-size:var(--t-hero);line-height:.99;margin:0;max-width:17ch}
+.lede{
+  margin:19px 0 0;max-width:58ch;font-size:var(--t-lede);line-height:1.5;
+  color:var(--ice-2);
+}
+.cta-link{
+  display:inline-block;margin-top:26px;background:var(--crease);color:var(--bowl);
+  border:0;border-radius:var(--rad);padding:14px 26px;text-decoration:none;
+  font-weight:800;font-stretch:112%;font-size:17px;letter-spacing:-.01em;cursor:pointer;
+}
+.cta-link:hover{background:var(--crease-lo)}
+.hero-kits{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:clamp(9px,1.7vw,20px);margin-top:clamp(30px,4.4vw,50px);
+}
+/* The render is the loudest thing on the page: a pale studio sweep, lit off
+   the ice. The panel and the image ground are the same value, so the jersey
+   stands on the panel instead of looking pasted onto it. */
+.hero-kits figure{
+  margin:0;background:#eef1f4;border-radius:var(--rad);overflow:hidden;
+  box-shadow:0 0 0 1px var(--seam),0 26px 64px -26px var(--crease-glow);
+}
+.hero-kits img{width:100%;height:auto}
+.hero-kits figcaption{
+  padding:9px 12px 11px;background:var(--boards);color:var(--ice-3);
+  font-weight:600;font-stretch:88%;font-size:var(--t-xs);
+  letter-spacing:.15em;text-transform:uppercase;text-align:center;
+}
+
+/* ---------- the sell ---------- */
+/* Quiet by design: rules and type, no panel chrome. The boxed panels start at
+   the designer, so the page reads as a story that turns into a tool. */
+.sell{
+  background:0;border:0;border-top:1px solid var(--seam-lo);border-radius:0;
+  margin-top:0;padding:clamp(34px,4.4vw,54px) 0 clamp(6px,1vw,12px);
+}
+.sell h2{font-size:var(--t-h2);margin:0 0 clamp(16px,2vw,24px)}
+.sell h3{font-size:var(--t-h3);font-weight:700;font-stretch:106%;margin:0 0 5px}
+
+.how{list-style:none;margin:0;padding:0;display:grid;gap:clamp(16px,2.6vw,30px);grid-template-columns:repeat(3,1fr)}
+.how li{border-top:2px solid var(--crease);padding-top:14px}
+.how .n{
+  display:block;font-weight:700;font-stretch:88%;font-size:var(--t-xs);
+  letter-spacing:.19em;color:var(--crease);margin-bottom:9px;
+}
+.how b{display:block;font-size:var(--t-h3);font-weight:800;font-stretch:112%;letter-spacing:-.02em;color:var(--ice);margin-bottom:4px}
+.how p{margin:0;color:var(--ice-2);font-size:var(--t-sm)}
+
+.incl{list-style:none;margin:0;padding:0;max-width:660px}
+.incl li{display:flex;justify-content:space-between;gap:18px;padding:13px 0;border-bottom:1px solid var(--seam-lo)}
+.incl b{color:var(--ice);font-weight:600}
+.incl small{display:block;color:var(--ice-3);font-size:14px}
+.incl .price{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ice);white-space:nowrap}
+.terms{margin:15px 0 0;color:var(--ice-3);font-size:var(--t-sm)}
+
+.why{max-width:60ch;font-size:var(--t-lede);line-height:1.55;color:var(--ice-2);margin:0}
+
+.faq{max-width:760px}
+.faq div{border-top:1px solid var(--seam-lo);padding:17px 0}
+.faq div:first-child{border-top:0;padding-top:0}
+.faq p{margin:0;color:var(--ice-2);font-size:var(--t-sm)}
+.faq .cta-link{margin-top:28px}
 
 /* ---------- steps ---------- */
 main{max-width:1080px;margin:0 auto;padding:0 20px 60px}
 section{
-  background:#fff;border:1px solid var(--line);border-radius:var(--rad);
-  margin-top:22px;padding:20px;
+  background:var(--boards);border:1px solid var(--seam-lo);border-radius:var(--rad);
+  margin-top:22px;padding:22px;
 }
+#designer{scroll-margin-top:14px}
 .step-no{
-  font-family:"Barlow Condensed";font-weight:700;font-size:15px;
-  color:var(--board);border:1.5px solid var(--board);border-radius:50%;
+  font-weight:700;font-size:var(--t-sm);font-variant-numeric:tabular-nums;
+  color:var(--crease);border:1.5px solid var(--crease);border-radius:50%;
   width:27px;height:27px;display:grid;place-items:center;flex:0 0 auto;
 }
 .step-hd{display:flex;gap:11px;align-items:center;margin-bottom:4px}
-.step-hd h2{font-size:24px;margin:0}
-.note{color:var(--dim);font-size:15px;margin:0 0 16px}
+.step-hd h2{font-size:var(--t-h2);margin:0}
+.note{color:var(--ice-3);font-size:var(--t-sm);margin:0 0 16px}
 
-label.fld,.fld{display:block;font-weight:600;font-size:15px;margin:14px 0 5px}
+label.fld,.fld{display:block;font-weight:600;font-size:var(--t-sm);margin:16px 0 6px;color:var(--ice)}
 .styles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .styles.four{grid-template-columns:repeat(4,1fr)}
 .styles.two{grid-template-columns:repeat(2,1fr)}
-.link{background:0;border:0;padding:0;margin-top:16px;color:var(--board);
-  font:inherit;font-size:15px;text-decoration:underline;cursor:pointer}
-.link:hover{color:var(--board-lo)}
+.link{background:0;border:0;padding:0;margin-top:16px;color:var(--crease);
+  font:inherit;font-size:var(--t-sm);text-decoration:underline;cursor:pointer}
+.link:hover{color:var(--crease-lo)}
 .styles button{
-  border:1.5px solid var(--line);border-radius:var(--rad);background:#fff;color:var(--puck);
+  border:1.5px solid var(--seam);border-radius:var(--rad);background:var(--boards-hi);color:var(--ice);
   font:inherit;line-height:1.25;padding:11px 8px;text-align:center;cursor:pointer;
   min-height:48px;
 }
-.styles button b{display:block;font-weight:600;font-size:15px}
-.styles button i{display:block;font-style:normal;color:var(--dim);font-size:13px;margin-top:2px}
-.styles button[aria-pressed=true]{border-color:var(--board);background:var(--ice);color:var(--board)}
-.styles button[aria-pressed=true] i{color:var(--board)}
+.styles button:hover{border-color:var(--crease-lo)}
+.styles button b{display:block;font-weight:600;font-size:var(--t-sm);color:inherit}
+.styles button i{display:block;font-style:normal;color:var(--ice-3);font-size:13px;margin-top:2px}
+.styles button[aria-pressed=true]{border-color:var(--crease);background:#12384f;color:var(--crease)}
+.styles button[aria-pressed=true] i{color:var(--crease)}
 textarea,input[type=text],input[type=email],input[type=password],select{
-  width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:var(--rad);
-  font:inherit;background:#fff;color:var(--puck);
+  width:100%;padding:11px 12px;border:1px solid var(--seam);border-radius:var(--rad);
+  font:inherit;background:var(--boards-hi);color:var(--ice);
 }
+textarea:hover,input:hover,select:hover{border-color:var(--crease-lo)}
+::placeholder{color:var(--ice-3);opacity:.75}
 textarea{resize:vertical;line-height:1.5}
-:focus-visible{outline:2.5px solid var(--board);outline-offset:1px}
+:focus-visible{outline:2.5px solid var(--crease);outline-offset:2px}
 
 /* ---------- designer ---------- */
 .designer{display:grid;gap:18px}
@@ -88,9 +202,14 @@ textarea{resize:vertical;line-height:1.5}
   .designer>div:first-child{order:2}
   .designer>div:last-child{order:1}
 }
+@media(max-width:700px){
+  .how{grid-template-columns:1fr}
+}
 @media(max-width:560px){
   main{padding:0 14px 48px}
   section{padding:16px}
+  .sell{padding-left:0;padding-right:0}
+  header{padding-left:14px;padding-right:14px}
   .styles.four{grid-template-columns:repeat(2,1fr)}
   .canvas .ph{padding:16px;min-height:120px}
   /* Comfortable targets for the two smallest controls. */
@@ -103,166 +222,295 @@ textarea{resize:vertical;line-height:1.5}
   .roster thead{display:none}
   .roster,.roster tbody,.roster tr,.roster td{display:block;width:auto}
   .roster tr{
-    border:1px solid var(--line);border-radius:var(--rad);
-    padding:10px 12px;margin-bottom:10px;background:#fff;
+    border:1px solid var(--seam-lo);border-radius:var(--rad);
+    padding:10px 12px;margin-bottom:10px;background:var(--boards-lo);
   }
-  .roster tr.err{background:#fdf1f0}
+  .roster tr.err{background:#2a1116}
   .roster td{
     border:0;padding:5px 0;display:grid;
     grid-template-columns:78px minmax(0,1fr);align-items:center;gap:10px;
   }
-  .roster td::before{content:attr(data-label);color:var(--dim);font-size:14.5px}
+  .roster td::before{content:attr(data-label);color:var(--ice-3);font-size:var(--t-sm)}
   .roster td input,.roster td select{width:100%}
   .roster td.num input{width:100%}
   .roster td.act{grid-template-columns:1fr auto;padding-top:2px}
 }
+/* The concept sits on the same pale sweep the model renders it on, lit like
+   the hero. Everything around it is dark, so this is where the eye lands. */
 .canvas{
-  border:1px solid var(--line);border-radius:var(--rad);
+  border-radius:var(--rad);
   background:
-    repeating-linear-gradient(90deg,#eef3f6 0 39px,#e4ebef 39px 40px),
-    var(--ice);
+    repeating-linear-gradient(90deg,#eef3f6 0 39px,#e6ecf0 39px 40px),
+    #eef1f4;
+  box-shadow:0 0 0 1px var(--seam),0 26px 60px -28px var(--crease-glow);
   display:grid;place-items:center;text-align:center;overflow:hidden;position:relative;
 }
 /* The image sets the height, so a wide concept fills the column instead of
    sitting letterboxed inside a square. */
 .canvas img{width:100%;height:auto;display:block}
 /* Only the empty and loading states need a minimum size; once an image lands
-   it is what holds the box open. */
+   it is what holds the box open. Dark type — this panel is a light one. */
 .canvas .ph{
-  color:var(--dim);font-size:15px;max-width:26ch;
+  color:#5a7186;font-size:var(--t-sm);max-width:26ch;
   padding:26px;min-height:150px;display:grid;place-items:center;box-sizing:border-box;
 }
-.spin{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--board);
+.spin{width:26px;height:26px;border:3px solid #c3d0da;border-top-color:#12384f;
   border-radius:50%;animation:sp .8s linear infinite;margin:0 auto 11px}
 @keyframes sp{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.spin{animation-duration:2.4s}}
 
 .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
 .chips button{
-  background:var(--ice);border:1px solid var(--line);border-radius:100px;
-  padding:6px 13px;font-size:14.5px;cursor:pointer;color:var(--board);
+  background:var(--boards-hi);border:1px solid var(--seam);border-radius:100px;
+  padding:6px 13px;font-size:var(--t-sm);cursor:pointer;color:var(--ice-2);
 }
-.chips button:hover{background:#dde7ed}
-.chips button[aria-pressed=true]{background:var(--board);border-color:var(--board);color:#fff}
-.chips button[aria-pressed=true]:hover{background:var(--board-lo)}
-.chips .clear{background:0;border-color:transparent;color:var(--dim);text-decoration:underline}
-.chips .clear:hover{background:0;color:var(--puck)}
+.chips button:hover{background:#1b374d;color:var(--ice)}
+.chips button[aria-pressed=true]{background:var(--crease);border-color:var(--crease);color:var(--bowl);font-weight:600}
+.chips button[aria-pressed=true]:hover{background:var(--crease-lo)}
+.chips .clear{background:0;border-color:transparent;color:var(--ice-3);text-decoration:underline}
+.chips .clear:hover{background:0;color:var(--ice)}
 
-.code{font-size:14.5px;color:var(--dim);margin:10px 0 0}
+.code{font-size:var(--t-sm);color:var(--ice-3);margin:12px 0 0}
 .code[hidden]{display:none}
-.code b{font-family:"Barlow Condensed";font-size:18px;letter-spacing:.1em;color:var(--board)}
+.code b{font-weight:700;font-size:18px;letter-spacing:.12em;color:var(--crease);font-variant-numeric:tabular-nums}
 .vers{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .vers[hidden],.refine[hidden]{display:none}
-.vers button{padding:0;line-height:0;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
-.vers button[aria-current="true"]{border-color:var(--board);box-shadow:0 0 0 1px var(--board)}
+.vers button{padding:0;line-height:0;background:#eef1f4;border:1px solid var(--seam);border-radius:6px;cursor:pointer}
+.vers button[aria-current="true"]{border-color:var(--crease);box-shadow:0 0 0 1px var(--crease)}
 .vers img{width:52px;height:52px;object-fit:contain;display:block}
 .refine{margin-top:14px}
 .refine .ghost{margin-top:10px}
-.capture{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+.capture{margin-top:18px;border-top:1px solid var(--seam-lo);padding-top:14px}
 .capture[hidden]{display:none}
 .capture .note{margin:0 0 9px}
 .capture .ghost{margin-top:10px}
-.saved{font-size:14.5px;margin:10px 0 0}
+.saved{font-size:var(--t-sm);margin:10px 0 0}
 .saved[hidden]{display:none}
 .saved.ok{color:var(--ok)}
-.saved.bad{color:var(--bad)}
+.saved.bad{color:var(--goal)}
 
 .drop{
-  border:1.5px dashed var(--line);border-radius:var(--rad);padding:17px;text-align:center;
-  color:var(--dim);font-size:15px;cursor:pointer;background:var(--ice-lo);
+  border:1.5px dashed var(--seam);border-radius:var(--rad);padding:17px;text-align:center;
+  color:var(--ice-3);font-size:var(--t-sm);cursor:pointer;background:var(--boards-lo);
 }
-.drop.has{border-style:solid;border-color:var(--board);color:var(--board);background:#fff}
+.drop:hover{border-color:var(--crease-lo);color:var(--ice-2)}
+.drop.has{border-style:solid;border-color:var(--crease);color:var(--crease);background:#12384f}
 .logo-prev{display:flex;align-items:center;gap:12px;margin-top:10px}
 .logo-prev[hidden]{display:none}
-.logo-prev img{width:56px;height:56px;object-fit:contain;border:1px solid var(--line);border-radius:4px;background:#fff}
+.logo-prev img{width:56px;height:56px;object-fit:contain;border:1px solid var(--seam);border-radius:4px;background:#eef1f4}
 
 /* ---------- color card ---------- */
 .pal{display:grid;grid-template-columns:repeat(auto-fill,minmax(46px,1fr));gap:7px}
 .pal button{
-  aspect-ratio:1;border-radius:4px;border:1px solid rgba(0,0,0,.2);cursor:pointer;padding:0;position:relative;
+  aspect-ratio:1;border-radius:4px;border:1px solid rgba(255,255,255,.16);cursor:pointer;padding:0;position:relative;
 }
 .pal button[aria-pressed=true]::after{
-  content:"";position:absolute;inset:-3px;border:2.5px solid var(--board);border-radius:6px;
+  content:"";position:absolute;inset:-3px;border:2.5px solid var(--crease);border-radius:6px;
 }
 .picked{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px;min-height:34px;align-items:center}
-.tag{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:100px;padding:4px 11px 4px 5px;font-size:14px}
-.tag i{width:20px;height:20px;border-radius:50%;border:1px solid rgba(0,0,0,.2);display:block}
-.tag button{border:0;background:0;cursor:pointer;color:var(--dim);font-size:17px;line-height:1;padding:0 1px}
+.tag{display:flex;align-items:center;gap:7px;border:1px solid var(--seam);border-radius:100px;padding:4px 11px 4px 5px;font-size:14px;color:var(--ice-2)}
+.tag i{width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.2);display:block}
+.tag button{border:0;background:0;cursor:pointer;color:var(--ice-3);font-size:17px;line-height:1;padding:0 1px}
+.tag button:hover{color:var(--goal)}
 
 /* ---------- roster ---------- */
 .roster-tools{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-bottom:12px}
-table{width:100%;border-collapse:collapse;font-size:15px}
+table{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
 th{
-  text-align:left;font-family:"Barlow Condensed";font-weight:600;font-size:15px;
-  color:var(--dim);border-bottom:1.5px solid var(--line);padding:6px 8px 6px 0;
+  text-align:left;font-weight:600;font-stretch:88%;font-size:var(--t-xs);
+  letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ice-3);border-bottom:1.5px solid var(--seam);padding:8px 8px 8px 0;
 }
-td{padding:5px 8px 5px 0;border-bottom:1px solid #eef2f4;vertical-align:middle}
+td{padding:5px 8px 5px 0;border-bottom:1px solid var(--seam-lo);vertical-align:middle}
 td input,td select{padding:8px;font-size:16px}
-td.num input{width:66px}
-tr.err td{background:#fdf1f0}
-.msg{font-size:14.5px;margin:9px 0 0}
-.msg.bad{color:var(--bad)}
+td.num input{width:66px;font-variant-numeric:tabular-nums}
+tr.err td{background:#2a1116}
+.msg{font-size:var(--t-sm);margin:9px 0 0}
+.msg.bad{color:var(--goal)}
 .msg.ok{color:var(--ok)}
-.rm{border:0;background:0;color:var(--dim);cursor:pointer;font-size:19px;line-height:1;padding:0 4px}
+.rm{border:0;background:0;color:var(--ice-3);cursor:pointer;font-size:19px;line-height:1;padding:0 4px}
+.rm:hover{color:var(--goal)}
+
+/* ---------- size chart ---------- */
+.hint{color:var(--ice-3);font-size:var(--t-sm);margin:10px 0 0}
+.hint[hidden]{display:none}
+.sheet{
+  width:min(520px,calc(100vw - 24px));max-height:86vh;padding:0;
+  background:var(--boards);color:var(--ice-2);
+  border:1px solid var(--seam);border-radius:var(--rad);overflow:hidden;
+}
+.sheet::backdrop{background:rgba(3,8,13,.74)}
+.sheet-hd{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:13px 8px 13px 16px;border-bottom:1px solid var(--seam-lo);
+}
+.sheet-hd h3{margin:0;font-size:var(--t-h3)}
+.sheet-x{
+  border:0;background:0;color:var(--ice-3);font-size:26px;line-height:1;
+  cursor:pointer;min-width:44px;min-height:44px;
+}
+.sheet-x:hover{color:var(--ice)}
+.sheet-body{padding:6px 16px 18px;overflow:auto;max-height:calc(86vh - 56px)}
+.chart{font-variant-numeric:tabular-nums}
+.chart td{padding:7px 8px 7px 0}
+.chart td:first-child{width:88px}
+.chart-note p{color:var(--ice-3);font-size:var(--t-sm);margin:14px 0 0}
 
 /* ---------- order ---------- */
-.lines{border-top:1.5px solid var(--line);margin-top:6px}
-.line{display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid #eef2f4}
-.line span:last-child{font-variant-numeric:tabular-nums;font-weight:600}
-.line.total{border-bottom:0;font-family:"Barlow Condensed";font-size:22px;font-weight:700;padding-top:14px}
-.kit-item{display:flex;gap:14px;align-items:center;padding:11px 0;border-bottom:1px solid #eef2f4}
+.lines{border-top:1.5px solid var(--seam);margin-top:6px}
+.line{display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--seam-lo)}
+.line span:last-child{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ice)}
+.line.total{border-bottom:0;font-weight:800;font-stretch:112%;letter-spacing:-.02em;font-size:24px;padding-top:14px;color:var(--ice)}
+.kit-item{display:flex;gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid var(--seam-lo)}
 .kit-item div{flex:1}
-.kit-item b{font-weight:600}
-.kit-item small{display:block;color:var(--dim);font-size:14px}
+.kit-item b{font-weight:600;color:var(--ice)}
+.kit-item small{display:block;color:var(--ice-3);font-size:14px}
 .yesno{display:flex;gap:6px;flex:0 0 auto}
 .yesno button{
-  border:1.5px solid var(--line);border-radius:100px;background:#fff;color:var(--puck);
-  font:inherit;font-size:14.5px;padding:7px 16px;cursor:pointer;min-width:58px;
+  border:1.5px solid var(--seam);border-radius:100px;background:var(--boards-hi);color:var(--ice-2);
+  font:inherit;font-size:var(--t-sm);padding:7px 16px;cursor:pointer;min-width:58px;
 }
-.yesno button:hover{background:var(--ice)}
-.yesno button[aria-pressed=true]{background:var(--board);border-color:var(--board);color:#fff}
-.yesno button[aria-pressed=true]:hover{background:var(--board-lo)}
-.kit-note{font-size:15px;color:var(--board);font-weight:600;margin:13px 0 0}
+.yesno button:hover{border-color:var(--crease-lo);color:var(--ice)}
+.yesno button[aria-pressed=true]{background:var(--crease);border-color:var(--crease);color:var(--bowl);font-weight:600}
+.yesno button[aria-pressed=true]:hover{background:var(--crease-lo)}
+.kit-note{font-size:var(--t-sm);color:var(--crease);font-weight:600;margin:14px 0 0}
 .kit-note[hidden]{display:none}
 
 .cta{
-  width:100%;background:var(--board);color:#fff;border:0;border-radius:var(--rad);
-  padding:15px;font-family:"Barlow Condensed";font-weight:700;font-size:20px;
-  letter-spacing:.02em;cursor:pointer;margin-top:16px;
+  width:100%;background:var(--crease);color:var(--bowl);border:0;border-radius:var(--rad);
+  padding:16px;font-weight:800;font-stretch:112%;font-size:20px;
+  letter-spacing:-.01em;cursor:pointer;margin-top:16px;
 }
-.cta:hover{background:var(--board-lo)}
-.cta[disabled]{background:#9fb0bd;cursor:not-allowed}
+.cta:hover{background:var(--crease-lo)}
+.cta[disabled]{background:var(--boards-hi);color:var(--ice-3);cursor:not-allowed}
 .ghost{
-  background:#fff;border:1.5px solid var(--board);color:var(--board);border-radius:var(--rad);
-  padding:9px 15px;font-weight:600;font-size:15px;cursor:pointer;
+  background:transparent;border:1.5px solid var(--seam);color:var(--ice);border-radius:var(--rad);
+  padding:9px 15px;font-weight:600;font-size:var(--t-sm);cursor:pointer;
 }
+.ghost:hover{border-color:var(--crease);color:var(--crease)}
 
 /* ---------- disclaimer ---------- */
 .disclaimer{
-  background:#fffbec;border:1px solid #e6d193;border-left:4px solid var(--tape);
-  border-radius:var(--rad);padding:14px 16px;font-size:15px;margin-top:16px;
+  background:#1d1a0e;border:1px solid #4a3f18;border-left:4px solid var(--tape);
+  border-radius:var(--rad);padding:14px 16px;font-size:var(--t-sm);margin-top:16px;
+  color:#e3d8b3;
 }
-.disclaimer b{font-weight:600}
+.disclaimer b{font-weight:600;color:var(--tape)}
 
 .acct{display:grid;gap:0}
 @media(min-width:640px){.acct{grid-template-columns:1fr 1fr;gap:0 18px}}
-footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;text-align:center}
+footer{
+  background:var(--boards-lo);color:var(--ice-3);font-size:var(--t-sm);
+  padding:26px 20px;text-align:center;border-top:1px solid var(--seam-lo);
+}
 </style>
 </head>
 <body>
 
+<!-- HERO ..................................................................
+     Placeholder renders live in public/hero/. Drop the real files in at the
+     same three paths, same 4:5 portrait crop on a pale studio sweep, and
+     nothing in here needs to change. -->
 <header>
   <div class="wrap">
-    <div class="brand">Custom sublimated hockey</div>
-    <h1>Describe the jersey. See it before you pay.</h1>
-    <p>Design it here, upload your roster, and we send a final proof from our factory within 48 hours for you to approve.</p>
+    <p class="brand">Marty<i>&rsquo;</i>s</p>
+    <p class="eyebrow">Custom sublimated hockey</p>
+    <h1>Design your team&rsquo;s jerseys. See them before you pay.</h1>
+    <p class="lede">Answer four questions and three designs come back in seconds. A factory
+      proof follows within 48 hours, and nothing is built until you approve it.</p>
+    <a class="cta-link" href="#designer">Design your jersey</a>
+
+    <div class="hero-kits">
+      <figure>
+        <img src="/public/hero/jersey-01.png" width="1000" height="1250"
+             alt="Finished jersey render — navy with gold and white stripe sets">
+        <figcaption>Classic</figcaption>
+      </figure>
+      <figure>
+        <img src="/public/hero/jersey-02.png" width="1000" height="1250"
+             alt="Finished jersey render — black with scarlet and white stripe sets">
+        <figcaption>Bold</figcaption>
+      </figure>
+      <figure>
+        <img src="/public/hero/jersey-03.png" width="1000" height="1250"
+             alt="Finished jersey render — kelly green with cream stripe sets">
+        <figcaption>Retro</figcaption>
+      </figure>
+    </div>
   </div>
 </header>
 
 <main>
 
+  <!-- HOW IT WORKS ......................................................... -->
+  <section class="sell">
+    <h2>How it works</h2>
+    <ol class="how">
+      <li>
+        <span class="n">STEP ONE</span>
+        <b>Describe it</b>
+        <p>Tap through four questions. Three designs come back in seconds &mdash; no writing needed.</p>
+      </li>
+      <li>
+        <span class="n">STEP TWO</span>
+        <b>Proof in 48 hours</b>
+        <p>Pick the one you want and a factory proof lands within 48 hours.</p>
+      </li>
+      <li>
+        <span class="n">STEP THREE</span>
+        <b>You approve it</b>
+        <p>Nothing is built until you say the proof is right.</p>
+      </li>
+    </ol>
+  </section>
+
+  <!-- WHAT'S INCLUDED ...................................................... -->
+  <!-- Prices and the minimum read from CFG below, so this can't drift out of
+       step with what the order actually charges. -->
+  <section class="sell">
+    <h2>What&rsquo;s included</h2>
+    <ul class="incl" id="incl"></ul>
+    <p class="terms">Minimum order <b id="inclMoq"></b> jerseys. Everything is sublimated in your
+      colors from the same design &mdash; no extra art work, no set-up fee.</p>
+  </section>
+
+  <!-- WHY US ............................................................... -->
+  <section class="sell">
+    <h2>Why Marty&rsquo;s</h2>
+    <p class="why">Marty&rsquo;s is named for the founder&rsquo;s father, and it comes out of
+      Todd&rsquo;s Sporting Goods &mdash; the same people who have been outfitting teams since
+      the 1940s. What&rsquo;s new is the part where you see the jersey before you commit to it.</p>
+  </section>
+
+  <!-- FAQ .................................................................. -->
+  <section class="sell">
+    <h2>Questions</h2>
+    <div class="faq">
+      <div>
+        <h3>What&rsquo;s the minimum order?</h3>
+        <p><span id="faqMoq"></span> jerseys. Goalies count toward it.</p>
+      </div>
+      <div>
+        <h3>How long does delivery take?</h3>
+        <p>Your proof comes within 48 hours. Production starts the moment you approve it, and
+          the delivery window for your order is confirmed on that proof.</p>
+      </div>
+      <div>
+        <h3>What if I don&rsquo;t like the proof?</h3>
+        <p>Then nothing gets built. Tell us what to change and the proof is redrawn &mdash;
+          it only goes to production once you&rsquo;ve approved it.</p>
+      </div>
+      <div>
+        <h3>Can I use my own logo?</h3>
+        <p>Yes &mdash; upload it in the designer and it sits on the chest. If you haven&rsquo;t
+          got one, we&rsquo;ll design a crest around your team name instead.</p>
+      </div>
+    </div>
+    <a class="cta-link" href="#designer">Design your jersey</a>
+  </section>
+
   <!-- 1 ................................................. DESIGN -->
-  <section>
+  <section id="designer">
     <div class="step-hd"><span class="step-no">1</span><h2>Design</h2></div>
     <p class="note">Tap through the four questions. We'll draw three jerseys from your answers — no writing needed.</p>
 
@@ -355,8 +603,22 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
       <button class="ghost" id="addRow">Add a player</button>
       <button class="ghost" id="pasteBtn">Paste a list</button>
       <button class="ghost" id="csvBtn">Upload CSV</button>
+      <button class="ghost" id="sizeBtn">Size chart</button>
       <input type="file" id="csv" accept=".csv,.txt" hidden>
     </div>
+
+    <!-- Sizes run down the rows, not across: nine columns of numbers is a
+         pinch-and-scroll job on a phone, and this has to read at 390px. -->
+    <dialog class="sheet" id="sizeSheet" aria-labelledby="sizeHd">
+      <div class="sheet-hd">
+        <h3 id="sizeHd">Size chart</h3>
+        <button class="sheet-x" id="sizeClose" aria-label="Close size chart">&times;</button>
+      </div>
+      <div class="sheet-body">
+        <table class="chart" id="sizeTable"></table>
+        <div class="chart-note" id="sizeNotes"></div>
+      </div>
+    </dialog>
 
     <div id="pasteBox" hidden>
       <label class="fld" for="pasteArea">One player per line — number, name, size. Add <em>G</em> for goalies.</label>
@@ -365,9 +627,10 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
     </div>
 
     <table class="roster">
-      <thead><tr><th style="width:80px">No.</th><th>Name</th><th style="width:104px">Size</th><th style="width:132px" id="sockTh" hidden>Sock size</th><th style="width:64px">Goalie</th><th style="width:34px"></th></tr></thead>
+      <thead><tr><th style="width:80px">No.</th><th>Name</th><th style="width:104px">Size</th><th style="width:132px" id="sockTh" hidden>Sock length</th><th style="width:64px">Goalie</th><th style="width:34px"></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
+    <p class="hint" id="sockHint" hidden>Sock length is measured top of sock to bottom of hem.</p>
     <p class="msg" id="rosterMsg"></p>
   </section>
 
@@ -414,9 +677,25 @@ const CFG = {
     {id:'soakers', label:'Skate soakers',  option:'Skate soakers', price:24, note:'Team colors. One pair per player.'},
     {id:'bag',     label:'Player bags',    option:'Player bags',   price:69, note:'Embroidered logo, senior size.'},
   ],
-  sizes: ['YS','YM','YL','S','M','L','XL','2XL','3XL'],
-  // Hockey socks run on their own scale, nothing like the jersey sizes above.
-  sockSizes: ['Junior','Intermediate','Senior'],
+  sizes: ['YS','YM','YL','YXL','AS','AM','AL','AXL','A2XL'],
+  // Socks are ordered by length in inches, so they get their own list — there
+  // is no letter size to share with the jerseys above.
+  sockSizes: ['18"','21"','24"','28"','30"'],
+  // Factory measurements in inches, keyed to `sizes`. A factory revision is an
+  // edit to these two lists and nothing else. Goalies are not in here: the
+  // goalie cut is made in every size, and the roster's goalie box is what asks
+  // for it.
+  sizeChart: {
+    cols: ['Chest (in)','Length (in)'],
+    in: {
+      YS:[19.5,26.5], YM:[20.5,27.5], YL:[21.5,28.5], YXL:[22.5,29.5],
+      AS:[24,30.5],   AM:[25,32],     AL:[26,33],     AXL:[27,33.5], A2XL:[28,34],
+    },
+    notes: [
+      'Chest is measured flat across the garment, so it doubles for the full way round \u2014 the 24" chest on an AS fits a 48" chest measured around the player. Measure a jersey that already fits rather than the player, or you will order three sizes too big.',
+      'Any size can be made as a goalie cut. Pick the size that fits and tick the goalie box on that player\u2019s row.',
+    ],
+  },
   // Factory-matched color card. Swap these for your real swatches.
   card: [
     ['White','#ffffff'],['Silver','#c9ccd1'],['Steel','#8b9199'],['Graphite','#4a5058'],
@@ -464,6 +743,17 @@ const money = n => '$' + n.toLocaleString('en-US');
 const S = { logo:null, colors:[], roster:[], kit:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id, vibe:null, crest:null,
   session:(self.crypto&&self.crypto.randomUUID) ? self.crypto.randomUUID()
         : 's'+Date.now().toString(36)+Math.random().toString(36).slice(2,8) };
+
+/* ---------------- 0. the sell ---------------- */
+/* Presentation only: the homepage quotes the same numbers the order charges,
+   read straight off CFG so the two can never drift apart. */
+$('#incl').innerHTML =
+  [{label:'Jersey',note:'Sublimated in your colors, name and number on the back.',price:CFG.jerseyPrice}]
+    .concat(CFG.kit.map(k=>({label:k.label,note:k.note,price:k.price})))
+    .map(r=>`<li><div><b>${r.label}</b><small>${r.note}</small></div>`+
+            `<span class="price">${money(r.price)} each</span></li>`).join('');
+$('#inclMoq').textContent = CFG.moq;
+$('#faqMoq').textContent  = CFG.moq;
 
 /* ---------------- 1. design ---------------- */
 /* Chips toggle terms in and out of the prompt. The prompt text is the single
@@ -869,6 +1159,25 @@ function drawPicked(){
 /* ---------------- 3. roster ---------------- */
 $('#moqTxt').textContent = CFG.moq;
 
+/* Built from CFG, so the chart and the size dropdowns can never disagree.
+   <dialog> brings Esc, the backdrop and focus handling with it. */
+(function(){
+  $('#sizeTable').innerHTML =
+    '<thead><tr><th>Size</th>'+CFG.sizeChart.cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>'
+    +CFG.sizes.map(sz=>{
+        const v=CFG.sizeChart.in[sz]||[];
+        return `<tr><td><b>${sz}</b></td>`
+          +CFG.sizeChart.cols.map((c,i)=>`<td>${v[i]===undefined?'—':v[i]}</td>`).join('')+'</tr>';
+      }).join('')+'</tbody>';
+  $('#sizeNotes').innerHTML=CFG.sizeChart.notes.map(n=>`<p>${n}</p>`).join('');
+
+  const sheet=$('#sizeSheet');
+  $('#sizeBtn').onclick=()=>sheet.showModal();
+  $('#sizeClose').onclick=()=>sheet.close();
+  // Tapping the backdrop closes it, same as Esc.
+  sheet.onclick=e=>{ if(e.target===sheet) sheet.close(); };
+})();
+
 function addPlayer(p={}){
   S.roster.push({num:p.num||'',name:p.name||'',size:p.size||'',sock:p.sock||'',goalie:!!p.goalie});
   drawRoster();
@@ -878,6 +1187,7 @@ function drawRoster(){
   // Sock sizes are only worth asking for once somebody has said yes to socks.
   const socks=!!S.kit.socks;
   $('#sockTh').hidden=!socks;
+  $('#sockHint').hidden=!socks;
   const dupes = new Set();
   const seen = {};
   S.roster.forEach(p=>{
@@ -910,8 +1220,8 @@ function drawRoster(){
 
     let td4=null;
     if(socks){
-      td4=document.createElement('td');td4.dataset.label='Sock size';
-      const sk=document.createElement('select');sk.setAttribute('aria-label','Sock size, row '+(i+1));
+      td4=document.createElement('td');td4.dataset.label='Sock length';
+      const sk=document.createElement('select');sk.setAttribute('aria-label','Sock length, row '+(i+1));
       sk.innerHTML='<option value="">—</option>'+CFG.sockSizes.map(x=>`<option${x===p.sock?' selected':''}>${x}</option>`).join('');
       sk.onchange=e=>{p.sock=e.target.value;drawRoster();};td4.append(sk);
     }
@@ -944,7 +1254,7 @@ function validate(){
   if(noNum) probs.push(noNum+' missing a number');
   if(noName) probs.push(noName+' missing a name');
   if(noSize) probs.push(noSize+' missing a size');
-  if(noSock) probs.push(noSock+' missing a sock size');
+  if(noSock) probs.push(noSock+' missing a sock length');
   if(n && n<CFG.moq) probs.push('need '+(CFG.moq-n)+' more to reach the '+CFG.moq+'-jersey minimum');
 
   const m=$('#rosterMsg');
