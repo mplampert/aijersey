@@ -92,7 +92,7 @@ textarea{resize:vertical;line-height:1.5}
   main{padding:0 14px 48px}
   section{padding:16px}
   .styles.four{grid-template-columns:repeat(2,1fr)}
-  .canvas{padding:14px}
+  .canvas .ph{padding:16px;min-height:120px}
   /* Comfortable targets for the two smallest controls. */
   .tag{padding:2px 6px 2px 5px}
   .tag button{min-width:44px;min-height:44px}
@@ -117,14 +117,21 @@ textarea{resize:vertical;line-height:1.5}
   .roster td.act{grid-template-columns:1fr auto;padding-top:2px}
 }
 .canvas{
-  aspect-ratio:1;border:1px solid var(--line);border-radius:var(--rad);
+  border:1px solid var(--line);border-radius:var(--rad);
   background:
     repeating-linear-gradient(90deg,#eef3f6 0 39px,#e4ebef 39px 40px),
     var(--ice);
-  display:grid;place-items:center;text-align:center;padding:22px;overflow:hidden;position:relative;
+  display:grid;place-items:center;text-align:center;overflow:hidden;position:relative;
 }
-.canvas img{width:100%;height:100%;object-fit:contain}
-.canvas .ph{color:var(--dim);font-size:15px;max-width:26ch}
+/* The image sets the height, so a wide concept fills the column instead of
+   sitting letterboxed inside a square. */
+.canvas img{width:100%;height:auto;display:block}
+/* Only the empty and loading states need a minimum size; once an image lands
+   it is what holds the box open. */
+.canvas .ph{
+  color:var(--dim);font-size:15px;max-width:26ch;
+  padding:26px;min-height:150px;display:grid;place-items:center;box-sizing:border-box;
+}
 .spin{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--board);
   border-radius:50%;animation:sp .8s linear infinite;margin:0 auto 11px}
 @keyframes sp{to{transform:rotate(360deg)}}
@@ -141,7 +148,7 @@ textarea{resize:vertical;line-height:1.5}
 .chips .clear{background:0;border-color:transparent;color:var(--dim);text-decoration:underline}
 .chips .clear:hover{background:0;color:var(--puck)}
 
-.pair{display:grid;gap:10px}
+.pair{display:grid;gap:10px;align-items:start}
 .pair.has{grid-template-columns:1fr 1fr}
 .socks[hidden]{display:none}
 .socks canvas{width:100%;height:auto;display:block}
