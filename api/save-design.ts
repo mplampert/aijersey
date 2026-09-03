@@ -34,6 +34,7 @@ const FIELD = {
   session: "fldNJ7GYCybw4OAuf",
   created: "fld5rM5os7ZFssjJS",
   email: "fldizSNmZ7eJrsGgL",
+  kit: "fldfrtitFh7Xb4van",
 } as const;
 
 // Style and Status are single selects. typecast lets Airtable match a plain
@@ -41,6 +42,15 @@ const FIELD = {
 // so Style is written only when it is one of the three the base offers.
 const STYLE_OPTIONS = ["Laced collar", "V-neck", "Crew"];
 const STATUS_ON_SAVE = "Concept";
+
+// Kit is a multiple select and is written without typecast, so anything the
+// base doesn't already offer is dropped here rather than invented there.
+const KIT_OPTIONS = [
+  "Matching socks",
+  "Pant shells",
+  "Practice jerseys",
+  "Player bags",
+];
 
 // Uppercase, with the glyphs people misread removed: no I or 1, no O or 0.
 // 32 characters, and 256 divides by 32, so the bytes below map without bias.
@@ -63,6 +73,9 @@ type Body = {
   style?: string | string[];
   variant?: string;
   colors?: { name: string; hex: string }[];
+  // The matching kit the customer said yes to, by Airtable option name. None
+  // of these is previewed — they are confirmed on the factory proof.
+  kit?: string[];
   image?: string | null;
   logo?: string | null;
 };
@@ -241,6 +254,14 @@ export async function POST(request: Request): Promise<Response> {
     // record written before the customer settled on their colors still ends
     // up with the right ones.
     if (body.colors !== undefined) fields[FIELD.colors] = colorText(body.colors);
+    // Sent whenever a kit answer changes. An empty array is a real answer: it
+    // clears the field for a customer who said yes and then changed their mind.
+    if (body.kit !== undefined) {
+      const kit = body.kit ?? [];
+      const unknown = kit.filter((k) => !KIT_OPTIONS.includes(k));
+      if (unknown.length) console.warn("save-design: dropping unknown Kit", unknown);
+      fields[FIELD.kit] = kit.filter((k) => KIT_OPTIONS.includes(k));
+    }
 
     if (!body.recordId) {
       return Response.json(

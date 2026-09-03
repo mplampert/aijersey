@@ -148,11 +148,6 @@ textarea{resize:vertical;line-height:1.5}
 .chips .clear{background:0;border-color:transparent;color:var(--dim);text-decoration:underline}
 .chips .clear:hover{background:0;color:var(--puck)}
 
-.pair{display:grid;gap:10px;align-items:start}
-.pair.has{grid-template-columns:1fr 1fr}
-.socks[hidden]{display:none}
-.socks canvas{width:100%;height:auto;display:block}
-.socks-hd{font-size:13px;color:var(--dim);text-align:center;margin:6px 0 0}
 .code{font-size:14.5px;color:var(--dim);margin:10px 0 0}
 .code[hidden]{display:none}
 .code b{font-family:"Barlow Condensed";font-size:18px;letter-spacing:.1em;color:var(--board)}
@@ -215,11 +210,20 @@ tr.err td{background:#fdf1f0}
 .line{display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid #eef2f4}
 .line span:last-child{font-variant-numeric:tabular-nums;font-weight:600}
 .line.total{border-bottom:0;font-family:"Barlow Condensed";font-size:22px;font-weight:700;padding-top:14px}
-.addon{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid #eef2f4}
-.addon input{margin-top:5px;width:19px;height:19px;flex:0 0 auto}
-.addon div{flex:1}
-.addon b{font-weight:600}
-.addon small{display:block;color:var(--dim);font-size:14px}
+.kit-item{display:flex;gap:14px;align-items:center;padding:11px 0;border-bottom:1px solid #eef2f4}
+.kit-item div{flex:1}
+.kit-item b{font-weight:600}
+.kit-item small{display:block;color:var(--dim);font-size:14px}
+.yesno{display:flex;gap:6px;flex:0 0 auto}
+.yesno button{
+  border:1.5px solid var(--line);border-radius:100px;background:#fff;color:var(--puck);
+  font:inherit;font-size:14.5px;padding:7px 16px;cursor:pointer;min-width:58px;
+}
+.yesno button:hover{background:var(--ice)}
+.yesno button[aria-pressed=true]{background:var(--board);border-color:var(--board);color:#fff}
+.yesno button[aria-pressed=true]:hover{background:var(--board-lo)}
+.kit-note{font-size:15px;color:var(--board);font-weight:600;margin:13px 0 0}
+.kit-note[hidden]{display:none}
 
 .cta{
   width:100%;background:var(--board);color:#fff;border:0;border-radius:var(--rad);
@@ -264,14 +268,8 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
 
     <div class="designer">
       <div>
-        <div class="pair" id="pair">
-          <div class="canvas" id="canvas">
-            <p class="ph" id="ph">Your concept shows up here.</p>
-          </div>
-          <div class="canvas socks" id="socks" hidden>
-            <canvas id="sockCv" width="1000" height="1000" role="img"
-                    aria-label="Matching socks in your team colors"></canvas>
-          </div>
+        <div class="canvas" id="canvas">
+          <p class="ph" id="ph">Your concept shows up here.</p>
         </div>
 
         <p class="code" id="codeMsg" hidden>Design code <b id="codeVal"></b></p>
@@ -378,7 +376,8 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
     <div class="step-hd"><span class="step-no">3</span><h2>Order</h2></div>
     <p class="note">Add the rest of the kit — same design, no extra art work.</p>
 
-    <div id="addons"></div>
+    <div id="kit"></div>
+    <p class="kit-note" id="kitNote" hidden role="status">Your matching designs come with your jersey proof within 48 hours.</p>
 
     <div class="lines" id="lines"></div>
 
@@ -406,11 +405,15 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
 const CFG = {
   moq: 12,
   jerseyPrice: 49,
-  addons: [
-    {id:'socks',  label:'Matching socks',        price:19, note:'Same design, sublimated.'},
-    {id:'shells', label:'Pant shells',           price:39, note:'Team colors with your crest.'},
-    {id:'practice',label:'Practice jerseys',     price:24, note:'Solid with logo. One per player.'},
-    {id:'bag',    label:'Player bags',           price:69, note:'Embroidered logo, senior size.'},
+  // The rest of the kit. Each one is a plain yes/no answered in step 4 and
+  // nowhere else, and none of them gets a preview — the matching designs are
+  // confirmed on the factory proof, same as the jersey. `label` is also the
+  // Airtable option name, so the two have to stay in step.
+  kit: [
+    {id:'socks',   label:'Matching socks',   price:19, note:'Same design, sublimated.'},
+    {id:'shells',  label:'Pant shells',      price:39, note:'Team colors with your crest.'},
+    {id:'practice',label:'Practice jerseys', price:24, note:'Solid with logo. One per player.'},
+    {id:'bag',     label:'Player bags',      price:69, note:'Embroidered logo, senior size.'},
   ],
   sizes: ['YS','YM','YL','S','M','L','XL','2XL','3XL'],
   // Factory-matched color card. Swap these for your real swatches.
@@ -457,7 +460,7 @@ const $ = s => document.querySelector(s);
 const money = n => '$' + n.toLocaleString('en-US');
 
 /* ---------------- state ---------------- */
-const S = { logo:null, colors:[], roster:[], addons:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id, vibe:null, crest:null,
+const S = { logo:null, colors:[], roster:[], kit:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id, vibe:null, crest:null,
   session:(self.crypto&&self.crypto.randomUUID) ? self.crypto.randomUUID()
         : 's'+Date.now().toString(36)+Math.random().toString(36).slice(2,8) };
 
@@ -586,118 +589,6 @@ async function applyCrest(src){
   }
 }
 
-/* ---------------- socks ---------------- */
-/* Composited from a fixed template instead of generated. The model kept
-   returning ankle socks with feet and heels however the prompt was worded, and
-   socks have nothing to invent anyway — no crest, no text, just color bands on
-   a fixed shape. No API call, no model, no cost, instant re-render.
- *
- * LIMITATION: the template carries one fixed stripe layout, so recoloring
- * changes the colors, not the arrangement. The socks read as team colors
- * rather than a copy of the jersey's exact striping. That is a deliberate
- * trade for correctness and speed. */
-const SOCK = {
-  dir:'/public/sock/',   // served from the repo root, so public/ stays in the path
-  body:['part5','part1','band','cuffs'],   // takes the first color
-  bands:['part4','part2','part3'],         // takes the second
-  third:['part4'],                         // takes the third, when there is one
-  stitchDarken:0.62,                       // stitches darken whatever is under them
-  shade:{ambient:0.55,shadow:0.85,highlight:0.45},
-};
-
-const hx = h => [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
-const clamp = v => v<0?0:v>255?255:v|0;
-
-/* Built once: a region id per pixel, plus what each stitch pixel sits on top
-   of, so recoloring is a single pass over a Uint8Array. */
-let sockTpl=null, sockLoad=null;
-function loadSock(){
-  if(sockTpl) return Promise.resolve(sockTpl);
-  if(sockLoad) return sockLoad;
-  sockLoad=(async()=>{
-    const idx=await fetch(SOCK.dir+'index.json').then(r=>r.json());
-    const N=idx.size, order=idx.order, px=N*N;
-    const scratch=document.createElement('canvas');
-    scratch.width=N;scratch.height=N;
-    const sx=scratch.getContext('2d',{willReadFrequently:true});
-    const gray=async name=>{
-      const im=await new Promise((ok,no)=>{
-        const i=new Image();i.onload=()=>ok(i);i.onerror=()=>no(new Error(name));i.src=SOCK.dir+name+'.png';
-      });
-      sx.clearRect(0,0,N,N);sx.drawImage(im,0,0);
-      const d=sx.getImageData(0,0,N,N).data, out=new Uint8Array(px);
-      for(let i=0,p=0;i<px;i++,p+=4) out[i]=d[p];
-      return out;
-    };
-    const region=new Uint8Array(px), under=new Uint8Array(px);
-    for(let r=0;r<order.length;r++){
-      const name=order[r], m=await gray('mask_'+name);
-      for(let i=0;i<px;i++) if(m[i]>127){
-        region[i]=r+1;                       // topmost region owns the pixel
-        if(name!=='stitches') under[i]=r+1;  // what the stitches lie on
-      }
-    }
-    sockTpl={size:N,order,region,under,shadow:await gray('shadows'),highlight:await gray('highlights')};
-    return sockTpl;
-  })();
-  return sockLoad;
-}
-
-function paintSocks(){
-  const t=sockTpl;
-  if(!t||!S.colors.length) return false;
-  const hex=S.colors.map(c=>c.hex);
-  const of={};
-  SOCK.body.forEach(r=>of[r]=hex[0]);
-  SOCK.bands.forEach(r=>of[r]=hex[1]||hex[0]);
-  if(hex[2]) SOCK.third.forEach(r=>of[r]=hex[2]);
-  const rgb=[[0,0,0]];
-  t.order.forEach(name=>rgb.push(hx(of[name]||hex[0])));
-
-  const N=t.size, cv=$('#sockCv'), ctx=cv.getContext('2d');
-  const img=ctx.createImageData(N,N), d=img.data;
-  const A=SOCK.shade.ambient, SH=SOCK.shade.shadow, HI=SOCK.shade.highlight, DK=SOCK.stitchDarken;
-  const stitch=t.order.indexOf('stitches')+1;
-  for(let i=0,p=0;i<N*N;i++,p+=4){
-    const r=t.region[i];
-    if(!r){ d[p+3]=0; continue; }            // alpha is the union of the masks
-    const c=r===stitch?rgb[t.under[i]||1]:rgb[r], k=r===stitch?DK:1;
-    const s=A+(t.shadow[i]/255)*SH, h=(t.highlight[i]/255)*255*HI;
-    d[p]  =clamp(c[0]*k*s+h);
-    d[p+1]=clamp(c[1]*k*s+h);
-    d[p+2]=clamp(c[2]*k*s+h);
-    d[p+3]=255;
-  }
-  ctx.putImageData(img,0,0);
-  return true;
-}
-
-/* Socks appear as soon as there are colors and repaint whenever they change. */
-async function renderSocks(){
-  if(!S.colors.length){
-    $('#socks').hidden=true;$('#pair').classList.remove('has');
-    return;
-  }
-  try{ await loadSock(); }
-  catch(err){ console.error('sock template failed to load from '+SOCK.dir,err); return; }
-  if(!paintSocks()) return;
-  $('#socks').hidden=false;
-  $('#pair').classList.add('has');
-  fileSocks();
-}
-
-/* Filed like any other design, once per jersey per palette. */
-function fileSocks(){
-  const v=S.vIndex<0?null:S.versions[S.vIndex];
-  if(!v||!sockTpl||!S.colors.length) return;
-  const sig=S.colors.map(c=>c.hex).join(',');
-  if(v.socksSig===sig) return;
-  v.socksSig=sig;
-  saveDesign($('#sockCv').toDataURL('image/png'),
-             'Socks — '+versionName(v,S.vIndex),
-             d=>{v.socksRecordId=d.id||null;});
-}
-
 /* Nobody generates a blank brief: a color has to be picked first. */
 function syncGen(){ $('#gen').disabled=!S.colors.length; }
 
@@ -810,7 +701,6 @@ function pushColors(){
     const ids=[];
     S.versions.forEach(v=>{
       if(v.recordId) ids.push(v.recordId);
-      if(v.socksRecordId) ids.push(v.socksRecordId);
     });
     ids.forEach(recordId=>{
       fetch(CFG.saveEndpoint,{
@@ -832,7 +722,7 @@ function showVersion(i){
   const im=new Image();im.src=S.concept;im.alt='AI concept of your jersey';cv.append(im);
   drawVersions();
   renderCode();
-  fileSocks();
+  pushKit();
 }
 function versionName(v,i){
   return v.label ? 'Design '+(i+1)+' — '+v.label : 'Design '+(i+1);
@@ -956,7 +846,6 @@ CFG.card.forEach(([name,hex])=>{
     drawPicked();
     pushColors();
     syncGen();
-    renderSocks();
   };
   $('#pal').append(b);
 });
@@ -971,7 +860,7 @@ function drawPicked(){
     const s=document.createElement('span');s.textContent=c.name;
     const x=document.createElement('button');x.type='button';x.innerHTML='&times;';
     x.setAttribute('aria-label','Remove '+c.name);
-    x.onclick=()=>{S.colors=S.colors.filter(v=>v.hex!==c.hex);drawPicked();pushColors();syncGen();renderSocks();};
+    x.onclick=()=>{S.colors=S.colors.filter(v=>v.hex!==c.hex);drawPicked();pushColors();syncGen();};
     t.append(i,s,x);box.append(t);
   });
 }
@@ -1080,24 +969,64 @@ function parseList(txt){
 }
 
 /* ---------------- 4. order ---------------- */
-CFG.addons.forEach(a=>{
-  const d=document.createElement('label');d.className='addon';
-  const cb=document.createElement('input');cb.type='checkbox';
-  cb.onchange=e=>{S.addons[a.id]=e.target.checked;validate();};
+/* Every kit item is a yes/no and No is what it starts on, so nobody is opted
+   in without saying so. This is the only place any of them is asked about. */
+const kitChosen = () => CFG.kit.filter(k=>S.kit[k.id]);
+
+CFG.kit.forEach(k=>{
+  S.kit[k.id]=false;
+  const row=document.createElement('div');row.className='kit-item';
   const box=document.createElement('div');
-  box.innerHTML=`<b>${a.label} — ${money(a.price)} each</b><small>${a.note}</small>`;
-  d.append(cb,box);$('#addons').append(d);
+  box.innerHTML=`<b>${k.label} — ${money(k.price)} each</b><small>${k.note}</small>`;
+  const grp=document.createElement('div');
+  grp.className='yesno';grp.setAttribute('role','group');
+  grp.setAttribute('aria-label',k.label);
+  [['Yes',true],['No',false]].forEach(([name,yes])=>{
+    const b=document.createElement('button');
+    b.type='button';b.textContent=name;
+    b.setAttribute('aria-pressed',yes?'false':'true');
+    b.onclick=()=>{
+      S.kit[k.id]=yes;
+      grp.querySelectorAll('button').forEach(x=>
+        x.setAttribute('aria-pressed',x===b?'true':'false'));
+      drawKitNote();
+      pushKit();
+      validate();
+    };
+    grp.append(b);
+  });
+  row.append(box,grp);$('#kit').append(row);
 });
+
+/* One line covering the whole kit, however many items were said yes to. */
+function drawKitNote(){
+  $('#kitNote').hidden = !kitChosen().length;
+}
+
+/* The kit answers belong to the design being ordered, so they go onto that
+   record as they are given rather than waiting for a checkout that isn't
+   wired yet. Debounced: four answers are four clicks, not four writes. */
+let kitPush;
+function pushKit(){
+  const v=S.vIndex<0?null:S.versions[S.vIndex];
+  if(!v||!v.recordId) return;
+  const recordId=v.recordId, kit=kitChosen().map(k=>k.label);
+  clearTimeout(kitPush);
+  kitPush=setTimeout(()=>{
+    fetch(CFG.saveEndpoint,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({recordId,kit})
+    }).catch(()=>{});   // the customer is not waiting on this
+  },700);
+}
 
 function drawOrder(valid){
   const n=S.roster.length;
   const rows=[['Jerseys · '+n+' × '+money(CFG.jerseyPrice), n*CFG.jerseyPrice]];
   let total=n*CFG.jerseyPrice;
-  CFG.addons.forEach(a=>{
-    if(S.addons[a.id]){
-      rows.push([a.label+' · '+n+' × '+money(a.price), n*a.price]);
-      total+=n*a.price;
-    }
+  kitChosen().forEach(k=>{
+    rows.push([k.label+' · '+n+' × '+money(k.price), n*k.price]);
+    total+=n*k.price;
   });
   const box=$('#lines');box.innerHTML='';
   rows.forEach(([l,v])=>{
@@ -1128,7 +1057,7 @@ $('#checkout').onclick=()=>{
     },
     colors:S.colors,
     roster:S.roster,
-    addons:Object.keys(S.addons).filter(k=>S.addons[k]),
+    kit:kitChosen().map(k=>({id:k.id,label:k.label,price:k.price})),
     account:{team:$('#team').value,contact:$('#contact').value,email:$('#email').value}
   };
   console.log('ORDER',order);
