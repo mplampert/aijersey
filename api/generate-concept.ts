@@ -61,6 +61,40 @@ const VARIANTS: Record<string, string> = {
 
 type Ref = { data: string; mediaType: string };
 
+/**
+ * Runs a model call twice before giving up. These calls fail intermittently —
+ * two of three variants have come back empty in one run — and each variant is
+ * an option the customer would otherwise lose. A call that returns no image at
+ * all counts as a failure and is retried the same way.
+ */
+async function twice<T>(
+  label: string,
+  call: () => Promise<T | null>,
+): Promise<T | null> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const out = await call();
+      if (out) return out;
+      if (attempt === 1) console.warn(`generate-concept: ${label} returned no image, retrying`);
+    } catch (err) {
+      if (attempt === 2) throw err;
+      console.warn(`generate-concept: ${label} failed, retrying`, err);
+    }
+  }
+  return null;
+}
+
+/** One multimodal draw: the text plus whatever reference images go with it. */
+async function draw(
+  content: ({ type: "text"; text: string } | { type: "file"; data: string; mediaType: string })[],
+) {
+  const { files } = await generateText({
+    model: EDIT_MODEL,
+    messages: [{ role: "user", content }],
+  });
+  return files.find((f) => f.mediaType?.startsWith("image/")) ?? null;
+}
+
 /** A base64 data URL from the page, or null if it is missing or malformed. */
 function readDataUrl(value: string | null | undefined): Ref | null {
   if (!value) return null;
@@ -149,7 +183,9 @@ export async function POST(request: Request): Promise<Response> {
     "Both views are the same physical garment: stripe placement, yoke shape, sleeve design and color blocking must match exactly between the front and the back.",
     "The back must show a nameplate and a large two-digit number.",
     "The nameplate reads exactly NAME and the number is exactly 00 — these are placeholders, never an invented player name or number.",
+    "Exactly one number on each sleeve, high on the upper arm. Never two numbers stacked on the same sleeve, and never more than one number per sleeve.",
     "No branding of any kind: no manufacturer logos, brand names or brand marks, no neck or collar tags, no hem tags, anywhere on the garment.",
+    "No league logos, league shields, league crests or any real-world sports league marks anywhere on the garment — not on the chest, not on the collar, not on the back neck, not on the hem.",
     "Plain neutral light grey studio background, even lighting, no hanger, no model, no props.",
     "Sharp, high-detail product photography, in focus from edge to edge.",
     "No border, no frame, no vignette and no drop shadow box — the jersey fills the frame.",
@@ -194,26 +230,19 @@ export async function POST(request: Request): Promise<Response> {
      the logo attached as a reference image. Without a logo nothing changes. */
   const logoInstruction = [
     instruction,
-    "The attached image is the team's own logo.",
-    "Reproduce it on the chest as the crest exactly as supplied: do not redraw it, restyle it, recolor it, crop it, change its proportions or add anything to it.",
+    "The attached image is the team's own logo, and it is the only crest on this jersey.",
+    "Reproduce it on the chest exactly as supplied: do not redraw it, reinterpret it, restyle it, recolor it, crop it, change its proportions or add anything to it.",
+    "Do not invent, design or substitute any other crest, wordmark, badge, shield or emblem, anywhere on the garment. The supplied logo is the only mark on it.",
   ].join(" ");
 
   try {
     if (base) {
-      const { files } = await generateText({
-        model: EDIT_MODEL,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: editInstruction },
-              { type: "file", data: base.data, mediaType: base.mediaType },
-            ],
-          },
-        ],
-      });
-
-      const edited = files.find((f) => f.mediaType?.startsWith("image/"));
+      const edited = await twice("edit", () =>
+        draw([
+          { type: "text", text: editInstruction },
+          { type: "file", data: base!.data, mediaType: base!.mediaType },
+        ]),
+      );
       if (!edited) {
         // The model answered in text instead of returning an image. Say so
         // rather than falling back to a fresh generation, which would throw
@@ -230,20 +259,12 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     if (logo) {
-      const { files } = await generateText({
-        model: EDIT_MODEL,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: logoInstruction },
-              { type: "file", data: logo.data, mediaType: logo.mediaType },
-            ],
-          },
-        ],
-      });
-
-      const drawn = files.find((f) => f.mediaType?.startsWith("image/"));
+      const drawn = await twice("logo generation", () =>
+        draw([
+          { type: "text", text: logoInstruction },
+          { type: "file", data: logo.data, mediaType: logo.mediaType },
+        ]),
+      );
       if (!drawn) {
         return Response.json(
           { error: "That didn't come back as an image. Try again in a moment." },
@@ -256,11 +277,20 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
 
-    const { image } = await generateImage({
-      model: MODEL,
-      prompt: instruction,
-      size: "1024x1024",
+    const image = await twice("generation", async () => {
+      const { image } = await generateImage({
+        model: MODEL,
+        prompt: instruction,
+        size: "1024x1024",
+      });
+      return image ?? null;
     });
+    if (!image) {
+      return Response.json(
+        { error: "That didn't come back as an image. Try again in a moment." },
+        { status: 502 },
+      );
+    }
 
     return Response.json({
       image: `data:${image.mediaType ?? "image/png"};base64,${image.base64}`,
