@@ -1,4 +1,4 @@
-import { experimental_generateImage as generateImage } from "ai";
+import { experimental_generateImage as generateImage, generateText } from "ai";
 
 /**
  * POST /api/generate-concept
@@ -18,6 +18,13 @@ import { experimental_generateImage as generateImage } from "ai";
 // "google/gemini-2.5-flash-image" (cheapest), "black-forest-labs/flux-2-pro".
 const MODEL = "openai/gpt-image-2";
 
+// Refinement needs the previous concept as an input image, and generateImage()
+// has no parameter for one — ImageModelV2CallOptions is prompt-only, for every
+// provider, so no image model can edit through it. Editing therefore runs
+// through generateText with a multimodal image model, which takes the previous
+// concept as a file part and returns the edit in result.files.
+const EDIT_MODEL = "google/gemini-2.5-flash-image";
+
 // Screened before spending a call. Crude on purpose — the real gate is the
 // human review on every 48-hour proof.
 const BLOCKED = [
@@ -31,6 +38,8 @@ type Body = {
   prompt?: string;
   colors?: { name: string; hex: string }[];
   logo?: string | null;
+  // Data URL of the concept being refined. Absent on the first generation.
+  baseImage?: string | null;
 };
 
 export async function POST(request: Request): Promise<Response> {
@@ -54,6 +63,19 @@ export async function POST(request: Request): Promise<Response> {
       { error: "Describe the jersey first" },
       { status: 400 },
     );
+  }
+
+  // Only data URLs — the browser sends back an image this function produced.
+  let base: { data: string; mediaType: string } | null = null;
+  if (body.baseImage) {
+    const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/is.exec(body.baseImage);
+    if (!m) {
+      return Response.json(
+        { error: "That concept couldn't be read. Generate a new one and refine from there." },
+        { status: 400 },
+      );
+    }
+    base = { mediaType: m[1], data: m[2] };
   }
 
   const hit = BLOCKED.find((b) => prompt.toLowerCase().includes(b));
@@ -80,14 +102,21 @@ export async function POST(request: Request): Promise<Response> {
   // NOTE: the page uploads a logo, but reference-image conditioning is
   // model-specific and not wired yet. Front and back are requested in one
   // image so the two views stay consistent with each other.
-  const instruction = [
-    "Product photograph of a custom sublimated ice hockey jersey.",
-    "Show the front view and the back view side by side, both flat and squarely front-on.",
+
+  // Every rule below holds for an edit too, so a refinement can't quietly
+  // reintroduce branding or drift the two views apart.
+  const RULES = [
     "Both views are the same physical garment: stripe placement, yoke shape, sleeve design and colour blocking must match exactly between the front and the back.",
     "The back must show a nameplate and a large two-digit number.",
     "The nameplate reads exactly NAME and the number is exactly 00 — these are placeholders, never an invented player name or number.",
     "No branding of any kind: no manufacturer logos, brand names or brand marks, no neck or collar tags, no hem tags, anywhere on the jersey.",
     "Plain neutral light grey studio background, even lighting, no hanger, no model, no props.",
+  ];
+
+  const instruction = [
+    "Product photograph of a custom sublimated ice hockey jersey.",
+    "Show the front view and the back view side by side, both flat and squarely front-on.",
+    ...RULES,
     colorLine,
     "The brief may be only a few words. Treat it as direction, not as the full specification:",
     "honour everything it does say, and design the rest yourself rather than leaving it plain or literal.",
@@ -99,7 +128,49 @@ export async function POST(request: Request): Promise<Response> {
     .filter(Boolean)
     .join(" ");
 
+  const editInstruction = [
+    "Edit the attached ice hockey jersey concept.",
+    "Make only this change, described by the customer:",
+    prompt,
+    "Everything else must stay exactly as it is — the same garment, the same layout, the same crest, the same striping and the same colours wherever the requested change does not touch them.",
+    "Keep the front view and the back view side by side in the same arrangement as the attached image.",
+    ...RULES,
+    colorLine,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   try {
+    if (base) {
+      const { files } = await generateText({
+        model: EDIT_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: editInstruction },
+              { type: "file", data: base.data, mediaType: base.mediaType },
+            ],
+          },
+        ],
+      });
+
+      const edited = files.find((f) => f.mediaType?.startsWith("image/"));
+      if (!edited) {
+        // The model answered in text instead of returning an image. Say so
+        // rather than falling back to a fresh generation, which would throw
+        // away the design the customer is refining.
+        return Response.json(
+          { error: "That change didn't come back as an image. Try describing it differently." },
+          { status: 502 },
+        );
+      }
+
+      return Response.json({
+        image: `data:${edited.mediaType};base64,${edited.base64}`,
+      });
+    }
+
     const { image } = await generateImage({
       model: MODEL,
       prompt: instruction,

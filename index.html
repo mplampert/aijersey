@@ -88,6 +88,14 @@ textarea{resize:vertical;line-height:1.5}
 }
 .chips button:hover{background:#dde7ed}
 
+.vers{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.vers[hidden],.refine[hidden]{display:none}
+.vers button{padding:0;line-height:0;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.vers button[aria-current="true"]{border-color:var(--board);box-shadow:0 0 0 1px var(--board)}
+.vers img{width:52px;height:52px;object-fit:contain;display:block}
+.refine{margin-top:14px}
+.refine .ghost{margin-top:10px}
+
 .drop{
   border:1.5px dashed var(--line);border-radius:var(--rad);padding:17px;text-align:center;
   color:var(--dim);font-size:15px;cursor:pointer;background:var(--ice-lo);
@@ -179,8 +187,24 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
     <p class="note">Say what you want. Add your logo if you have one.</p>
 
     <div class="designer">
-      <div class="canvas" id="canvas">
-        <p class="ph" id="ph">Your concept shows up here.</p>
+      <div>
+        <div class="canvas" id="canvas">
+          <p class="ph" id="ph">Your concept shows up here.</p>
+        </div>
+
+        <div class="vers" id="vers" hidden role="group" aria-label="Concept versions"></div>
+
+        <div class="refine" id="refine" hidden>
+          <label class="fld" for="refinePrompt">What would you change?</label>
+          <textarea id="refinePrompt" rows="2" placeholder="Make the dark blue orange"></textarea>
+          <div class="chips" id="refineChips">
+            <button type="button">Different colours</button>
+            <button type="button">New crest idea</button>
+            <button type="button">More stripes</button>
+            <button type="button">Simpler</button>
+          </div>
+          <button class="ghost" id="refineBtn">Refine</button>
+        </div>
       </div>
 
       <div>
@@ -299,7 +323,7 @@ const $ = s => document.querySelector(s);
 const money = n => '$' + n.toLocaleString('en-US');
 
 /* ---------------- state ---------------- */
-const S = { logo:null, colors:[], roster:[], addons:{}, concept:null };
+const S = { logo:null, colors:[], roster:[], addons:{}, concept:null, versions:[], vIndex:-1 };
 
 /* ---------------- 1. design ---------------- */
 CFG.ideas.forEach(t=>{
@@ -339,40 +363,107 @@ $('#logoRm').onclick=()=>{
   drop.classList.remove('has');drop.textContent='Tap to upload, or drag a file here';
 };
 
+/* Shared by the first generation and by every refinement. baseImage is the
+   concept being edited, or null to draw a new one from scratch. */
+async function askConcept(prompt,baseImage){
+  const res=await fetch(CFG.endpoint,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({prompt,colors:S.colors,logo:S.logo?S.logo.data:null,baseImage:baseImage||null})
+  });
+  if(!res.ok){
+    const msg=await res.json().then(d=>d&&d.error,()=>null);
+    const e=new Error(msg||'Something went wrong — try again in a moment.');
+    e.guidance=res.status===422;   // trademark rejection, not a system failure
+    throw e;
+  }
+  const {image}=await res.json();
+  if(!image) throw new Error('No image returned');
+  return image;
+}
+function showBusy(line){
+  $('#canvas').innerHTML='<div><div class="spin"></div><p class="ph">'+line+'</p></div>';
+}
+function showError(err){
+  const cv=$('#canvas');
+  cv.innerHTML='';
+  const p=document.createElement('p');p.className='ph';
+  if(err.guidance){p.textContent=err.message;}
+  else{
+    p.append('Couldn\'t reach the image service.',document.createElement('br'));
+    const s=document.createElement('span');s.style.fontSize='13.5px';s.textContent=err.message;
+    p.append(s);
+  }
+  cv.append(p);
+}
+/* Every version generated this session is kept, so the customer can go back to
+   an earlier one and refine from that instead. */
+function addVersion(image){
+  S.versions.push(image);
+  showVersion(S.versions.length-1);
+  $('#refine').hidden=false;
+}
+function showVersion(i){
+  S.vIndex=i;S.concept=S.versions[i];
+  const cv=$('#canvas');
+  cv.innerHTML='';
+  const im=new Image();im.src=S.concept;im.alt='AI concept of your jersey';cv.append(im);
+  drawVersions();
+}
+function drawVersions(){
+  const box=$('#vers');
+  box.innerHTML='';
+  S.versions.forEach((src,i)=>{
+    const b=document.createElement('button');
+    b.type='button';
+    b.setAttribute('aria-label','Version '+(i+1));
+    b.setAttribute('aria-current',i===S.vIndex?'true':'false');
+    b.title=i===S.vIndex?'Version '+(i+1)+' — showing now':'Version '+(i+1);
+    const im=new Image();im.src=src;im.alt='';b.append(im);
+    b.onclick=()=>showVersion(i);
+    box.append(b);
+  });
+  box.hidden=!S.versions.length;
+}
+
 $('#gen').onclick=async()=>{
   const prompt=$('#prompt').value.trim();
   if(!prompt){$('#prompt').focus();return;}
-  const cv=$('#canvas'), btn=$('#gen');
+  const btn=$('#gen');
   btn.disabled=true;btn.textContent='Generating…';
-  cv.innerHTML='<div><div class="spin"></div><p class="ph">Drawing your concept</p></div>';
+  showBusy('Drawing your concept');
   try{
-    const res=await fetch(CFG.endpoint,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({prompt,colors:S.colors,logo:S.logo?S.logo.data:null})
-    });
-    if(!res.ok){
-      const msg=await res.json().then(d=>d&&d.error,()=>null);
-      const e=new Error(msg||'Something went wrong — try again in a moment.');
-      e.guidance=res.status===422;   // trademark rejection, not a system failure
-      throw e;
-    }
-    const {image}=await res.json();
-    if(!image) throw new Error('No image returned');
-    S.concept=image;
-    cv.innerHTML='';
-    const im=new Image();im.src=image;im.alt='AI concept of your jersey';cv.append(im);
+    addVersion(await askConcept(prompt,null));
   }catch(err){
-    cv.innerHTML='';
-    const p=document.createElement('p');p.className='ph';
-    if(err.guidance){p.textContent=err.message;}
-    else{
-      p.append('Couldn\'t reach the image service.',document.createElement('br'));
-      const s=document.createElement('span');s.style.fontSize='13.5px';s.textContent=err.message;
-      p.append(s);
-    }
-    cv.append(p);
+    showError(err);
+    drawVersions();   // an earlier version is still one click away
   }finally{
     btn.disabled=false;btn.textContent='Show me the concept';
+  }
+};
+
+$('#refineChips').querySelectorAll('button').forEach(b=>{
+  b.onclick=()=>{
+    const p=$('#refinePrompt'), t=b.textContent.toLowerCase();
+    p.value = p.value.trim() ? p.value.trim().replace(/,\s*$/,'') + ', ' + t : t;
+    p.focus();
+  };
+});
+
+$('#refineBtn').onclick=async()=>{
+  const prompt=$('#refinePrompt').value.trim();
+  if(!prompt){$('#refinePrompt').focus();return;}
+  if(!S.concept)return;
+  const btn=$('#refineBtn'), from=S.concept;
+  btn.disabled=true;btn.textContent='Refining…';
+  showBusy('Making that change');
+  try{
+    addVersion(await askConcept(prompt,from));
+    $('#refinePrompt').value='';
+  }catch(err){
+    showError(err);
+    drawVersions();
+  }finally{
+    btn.disabled=false;btn.textContent='Refine';
   }
 };
 
