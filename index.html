@@ -985,18 +985,142 @@ function buildBrief(){
    empty chest and the real file is composited on here, untouched — same pixels,
    same orientation, same colors.
  *
- * The concept is a front view and a back view side by side, so the front chest
- * sits a quarter of the way across. Only the front is crested: our jerseys carry
- * NAME and 00 on the back, not a second crest. */
+ * The concept is a front view and a back view side by side, and only the front
+ * is crested: our jerseys carry NAME and 00 on the back, not a second crest.
+ *
+ * Where the front view sits is not fixed. The model reframes on every
+ * generation — across real concepts its torso axis has landed anywhere from
+ * 0.252 to 0.279 of the image width, and the garment's height in the frame
+ * swings by a third when the image function falls back from a landscape frame
+ * to a square one. A fixed coordinate is wrong on almost every one of them, so
+ * the garment is found in the pixels instead and the crest placed against what
+ * was found. */
 const CREST = {
-  x:0.25,    // center of the front view, as a fraction of image width
-  y:0.40,    // chest height, as a fraction of image height
-  box:0.16,  // longest side of the logo, as a fraction of image width
+  detect:384,  // width the search runs at; it returns fractions, so size is free
+  step:6,      // largest per-channel jump the background fill may cross
+  cap:58,      // ...and how far it may drift from the border color in total
+  chest:0.40,  // crest center, as a fraction of the way from shoulder to hem
+  size:0.32,   // longest side of the logo, as a fraction of garment height
+
+  /* Used only when the search comes back empty. These are the medians measured
+     across the concepts in public/hero — right on average and wrong on any
+     particular one, which is the whole reason for the search. */
+  x:0.263,     // center of the front view, as a fraction of image width
+  y:0.425,     // chest height, as a fraction of image height
+  box:0.18,    // longest side of the logo, as a fraction of image width
 };
 
 const loadImg = src => new Promise((ok,no)=>{
   const i=new Image();i.onload=()=>ok(i);i.onerror=()=>no(new Error('image failed'));i.src=src;
 });
+
+/* Locates the front jersey and returns where its crest goes, in the same
+   fractions the fallback constants use — or null if what it found does not
+   look like a jersey, which hands the caller those constants instead.
+ *
+ * The concepts are drawn on a plain studio sweep, so the background is found
+ * rather than the garment: a flood fill runs inward from the border, and a
+ * neighbouring pixel joins the background only if it is a small step from the
+ * pixel it was reached from. That follows the sweep's own gradient and stops
+ * at the garment's edge. Thresholding on color against the background cannot
+ * do the same job — a white jersey sits two levels off a light grey sweep,
+ * while the edge between them is a jump of thirty. */
+function findJersey(jersey){
+  const W=jersey.naturalWidth||1, H=jersey.naturalHeight||1;
+  const k=Math.min(1,CREST.detect/W);
+  const w=Math.max(1,Math.round(W*k)), h=Math.max(1,Math.round(H*k));
+  const cv=document.createElement('canvas');
+  cv.width=w; cv.height=h;
+  const c=cv.getContext('2d',{willReadFrequently:true});
+  c.drawImage(jersey,0,0,w,h);
+  const px=c.getImageData(0,0,w,h).data;
+
+  // Seed color: the median of the border, so one dark corner cannot move it.
+  const edge=[];
+  for(let x=0;x<w;x++){edge.push(x*4);edge.push(((h-1)*w+x)*4);}
+  for(let y=0;y<h;y++){edge.push((y*w)*4);edge.push((y*w+w-1)*4);}
+  const mid=ch=>{const v=edge.map(i=>px[i+ch]).sort((a,b)=>a-b);return v[v.length>>1];};
+  const sr=mid(0), sg=mid(1), sb=mid(2);
+  const off=(i,r,g,b)=>Math.max(Math.abs(px[i]-r),Math.abs(px[i+1]-g),Math.abs(px[i+2]-b));
+
+  const bg=new Uint8Array(w*h), queue=new Int32Array(w*h);
+  let tail=0;
+  const seed=(x,y)=>{
+    const p=y*w+x;
+    if(bg[p]||off(p*4,sr,sg,sb)>CREST.cap) return;
+    bg[p]=1; queue[tail++]=p;
+  };
+  const grow=(x,y,r,g,b)=>{
+    const p=y*w+x, i=p*4;
+    if(bg[p]||off(i,r,g,b)>CREST.step||off(i,sr,sg,sb)>CREST.cap) return;
+    bg[p]=1; queue[tail++]=p;
+  };
+  for(let x=0;x<w;x++){seed(x,0);seed(x,h-1);}
+  for(let y=0;y<h;y++){seed(0,y);seed(w-1,y);}
+  for(let head=0;head<tail;head++){
+    const p=queue[head], x=p%w, y=(p-x)/w, i=p*4;
+    const r=px[i], g=px[i+1], b=px[i+2];
+    if(x>0) grow(x-1,y,r,g,b);
+    if(x<w-1) grow(x+1,y,r,g,b);
+    if(y>0) grow(x,y-1,r,g,b);
+    if(y<h-1) grow(x,y+1,r,g,b);
+  }
+
+  // Shoulder and hem: the first and last rows carrying real width. Both views
+  // sit at the same height in every concept measured, so this reads them both.
+  let top=-1, hem=-1;
+  for(let y=0;y<h;y++){
+    let n=0;
+    for(let x=0;x<w;x++) if(!bg[y*w+x]) n++;
+    if(n>w*0.02){ if(top<0) top=y; hem=y; }
+  }
+  if(top<0||hem-top<h*0.15) return null;
+  const span=hem-top;
+
+  /* The torso axis is read from a band just below the collar, where the two
+     views have never touched. That band is not always readable, though, so it
+     walks down the garment until one of them gives up a front view. */
+  let x0=-1, x1=-1;
+  for(const at of [0.04,0.12,0.20,0.30]){
+    const on=new Uint8Array(w);
+    const b0=top+Math.max(1,Math.round(span*at));
+    const b1=Math.min(h,top+Math.max(2,Math.round(span*(at+0.10))));
+    for(let y=b0;y<b1;y++) for(let x=0;x<w;x++) if(!bg[y*w+x]) on[x]=1;
+    /* A run is the front view if it is wide enough to be a garment, narrow
+       enough to be only one of them, and sits in the left half — the front is
+       always the left of the two. Anything else means this band has not found
+       what we came for: a leaked front collar can leave the back nameplate as
+       the only thing standing up here, and a band low enough for the sleeves to
+       touch reads both jerseys as a single run. Walk on and try lower. */
+    let s=-1;
+    for(let x=0;x<=w && x0<0;x++){
+      const set = x<w && on[x];
+      if(set && s<0) s=x;
+      else if(!set && s>=0){
+        const a=s, b=x-1, run=b-a;
+        if(run > w*0.15 && run < w*0.55 && (a+b)/2 < w*0.5){ x0=a; x1=b; }
+        s=-1;
+      }
+    }
+    if(x0>=0) break;
+  }
+  if(x0<0) return null;
+  const cx=(x0+x1)/2/w;
+  /* A sanity bound, not the answer: every concept measured put the front axis
+     between 0.25 and 0.28, so a result far outside that means the search
+     latched onto something that is not a jersey and the fallback is better. */
+  if(cx<0.15||cx>0.40) return null;
+
+  /* Size comes off the garment's height, not the shoulder run: on a pale jersey
+     the fill leaks across the shoulders and leaves only the collar standing,
+     which still centers correctly but measures far too narrow. Top and hem
+     survive that, and a jersey's width tracks its height closely enough. */
+  return {
+    x:cx,
+    y:(top+span*CREST.chest)/h,
+    box:CREST.size*(span/h)*(H/W),
+  };
+}
 
 /* Returns the concept with the crest on it, or the concept untouched if there
    is no logo or the compositing fails — a missing crest beats a lost design. */
@@ -1012,10 +1136,15 @@ async function applyCrest(src){
     // Fit inside the box, longest side first, so a wide or tall logo keeps its
     // proportions instead of being stretched.
     const lw=logo.naturalWidth||1, lh=logo.naturalHeight||1;
-    const box=CREST.box*cv.width;
+    /* A search that throws — a tainted canvas, an image that will not draw —
+       must cost the placement, never the crest. */
+    let spot=CREST;
+    try{ spot=findJersey(jersey)||CREST; }
+    catch(err){ console.warn('crest: could not find the jersey, placing by fallback',err); }
+    const box=spot.box*cv.width;
     const k=Math.min(box/lw,box/lh);
     const w=lw*k, h=lh*k;
-    c.drawImage(logo, CREST.x*cv.width-w/2, CREST.y*cv.height-h/2, w, h);
+    c.drawImage(logo, spot.x*cv.width-w/2, spot.y*cv.height-h/2, w, h);
     return cv.toDataURL('image/png');
   }catch(err){
     console.error('crest could not be composited',err);
