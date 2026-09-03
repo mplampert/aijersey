@@ -101,6 +101,9 @@ textarea{resize:vertical;line-height:1.5}
 .chips .clear{background:0;border-color:transparent;color:var(--dim);text-decoration:underline}
 .chips .clear:hover{background:0;color:var(--puck)}
 
+.code{font-size:14.5px;color:var(--dim);margin:10px 0 0}
+.code[hidden]{display:none}
+.code b{font-family:"Barlow Condensed";font-size:18px;letter-spacing:.1em;color:var(--board)}
 .vers{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .vers[hidden],.refine[hidden]{display:none}
 .vers button{padding:0;line-height:0;background:#fff;border:1px solid var(--line);border-radius:6px;cursor:pointer}
@@ -212,6 +215,8 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
         <div class="canvas" id="canvas">
           <p class="ph" id="ph">Your concept shows up here.</p>
         </div>
+
+        <p class="code" id="codeMsg" hidden>Design code <b id="codeVal"></b></p>
 
         <div class="vers" id="vers" hidden role="group" aria-label="Concept options"></div>
         <p class="saved" id="genMsg" hidden role="status"></p>
@@ -371,7 +376,9 @@ const $ = s => document.querySelector(s);
 const money = n => '$' + n.toLocaleString('en-US');
 
 /* ---------------- state ---------------- */
-const S = { logo:null, colors:[], roster:[], addons:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id };
+const S = { logo:null, colors:[], roster:[], addons:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id,
+  session:(self.crypto&&self.crypto.randomUUID) ? self.crypto.randomUUID()
+        : 's'+Date.now().toString(36)+Math.random().toString(36).slice(2,8) };
 
 /* ---------------- 1. design ---------------- */
 /* Chips toggle terms in and out of the prompt. The prompt text is the single
@@ -488,11 +495,39 @@ function showError(err){
 /* Every version generated this session is kept, so the customer can go back to
    an earlier one and refine from that instead. */
 function addVersion(image,label,select){
-  S.versions.push({src:image,label:label||''});
+  const v={src:image,label:label||'',code:null};
+  S.versions.push(v);
   if(select) showVersion(S.versions.length-1);
   else drawVersions();
   $('#refine').hidden=false;
   $('#capture').hidden=false;
+  saveDesign(v);
+}
+/* Files every design as it is drawn, so a customer who loses theirs can quote
+   the code back to us. Fire and forget: a save that fails costs the code, never
+   the concept, which is already on screen. */
+function saveDesign(v){
+  const collar=(CFG.styles.find(x=>x.id===S.style)||{}).name||S.style;
+  fetch(CFG.saveEndpoint,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      session:S.session,
+      prompt:$('#prompt').value.trim(),
+      style:collar,
+      variant:versionName(v,S.versions.indexOf(v)),
+      colors:S.colors,
+      image:v.src,
+      logo:S.logo?S.logo.data:null
+    })
+  })
+    .then(r=>r.ok?r.json():null)
+    .then(d=>{ if(d&&d.code){ v.code=d.code; renderCode(); } })
+    .catch(()=>{});
+}
+function renderCode(){
+  const v=S.vIndex<0?null:S.versions[S.vIndex];
+  if(v&&v.code){$('#codeVal').textContent=v.code;$('#codeMsg').hidden=false;}
+  else $('#codeMsg').hidden=true;
 }
 function showVersion(i){
   S.vIndex=i;S.concept=S.versions[i].src;
@@ -500,6 +535,7 @@ function showVersion(i){
   cv.innerHTML='';
   const im=new Image();im.src=S.concept;im.alt='AI concept of your jersey';cv.append(im);
   drawVersions();
+  renderCode();
 }
 function versionName(v,i){
   return v.label ? 'Design '+(i+1)+' — '+v.label : 'Design '+(i+1);
@@ -780,7 +816,17 @@ function drawOrder(valid){
 
 $('#checkout').onclick=()=>{
   const order={
-    design:{prompt:$('#prompt').value.trim(),style:S.style,logo:S.logo?S.logo.name:null,concept:!!S.concept},
+    design:{
+      prompt:$('#prompt').value.trim(),
+      style:S.style,
+      logo:S.logo?S.logo.name:null,
+      selected:S.vIndex<0?null:{
+        label:versionName(S.versions[S.vIndex],S.vIndex),
+        index:S.vIndex,
+        code:S.versions[S.vIndex].code,
+        image:S.concept
+      }
+    },
     colors:S.colors,
     roster:S.roster,
     addons:Object.keys(S.addons).filter(k=>S.addons[k]),
