@@ -101,6 +101,10 @@ textarea{resize:vertical;line-height:1.5}
 .chips .clear{background:0;border-color:transparent;color:var(--dim);text-decoration:underline}
 .chips .clear:hover{background:0;color:var(--puck)}
 
+.pair{display:grid;gap:10px}
+.pair.has{grid-template-columns:1fr 1fr}
+.socks[hidden]{display:none}
+.socks-hd{font-size:13px;color:var(--dim);text-align:center;margin:6px 0 0}
 .code{font-size:14.5px;color:var(--dim);margin:10px 0 0}
 .code[hidden]{display:none}
 .code b{font-family:"Barlow Condensed";font-size:18px;letter-spacing:.1em;color:var(--board)}
@@ -212,9 +216,15 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
 
     <div class="designer">
       <div>
-        <div class="canvas" id="canvas">
-          <p class="ph" id="ph">Your concept shows up here.</p>
+        <div class="pair" id="pair">
+          <div class="canvas" id="canvas">
+            <p class="ph" id="ph">Your concept shows up here.</p>
+          </div>
+          <div class="canvas socks" id="socks" hidden></div>
         </div>
+
+        <button class="ghost" id="socksBtn" hidden>Show matching socks</button>
+        <p class="saved" id="socksMsg" hidden role="status"></p>
 
         <p class="code" id="codeMsg" hidden>Design code <b id="codeVal"></b></p>
 
@@ -462,10 +472,10 @@ $('#logoRm').onclick=()=>{
 
 /* Shared by the first generation and by every refinement. baseImage is the
    concept being edited, or null to draw a new one from scratch. */
-async function askConcept(prompt,baseImage,variant){
+async function askConcept(prompt,baseImage,variant,product){
   const res=await fetch(CFG.endpoint,{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({prompt,style:S.style,variant:variant||null,colors:S.colors,logo:S.logo?S.logo.data:null,baseImage:baseImage||null})
+    body:JSON.stringify({prompt,style:S.style,variant:variant||null,product:product||'jersey',colors:S.colors,logo:S.logo?S.logo.data:null,baseImage:baseImage||null})
   });
   if(!res.ok){
     const msg=await res.json().then(d=>d&&d.error,()=>null);
@@ -501,12 +511,12 @@ function addVersion(image,label,select){
   else drawVersions();
   $('#refine').hidden=false;
   $('#capture').hidden=false;
-  saveDesign(v);
+  saveDesign(v.src,versionName(v,S.versions.length-1),code=>{v.code=code;renderCode();});
 }
 /* Files every design as it is drawn, so a customer who loses theirs can quote
    the code back to us. Fire and forget: a save that fails costs the code, never
    the concept, which is already on screen. */
-function saveDesign(v){
+function saveDesign(image,variant,onCode){
   const collar=(CFG.styles.find(x=>x.id===S.style)||{}).name||S.style;
   fetch(CFG.saveEndpoint,{
     method:'POST',headers:{'Content-Type':'application/json'},
@@ -514,14 +524,14 @@ function saveDesign(v){
       session:S.session,
       prompt:$('#prompt').value.trim(),
       style:collar,
-      variant:versionName(v,S.versions.indexOf(v)),
+      variant,
       colors:S.colors,
-      image:v.src,
+      image,
       logo:S.logo?S.logo.data:null
     })
   })
     .then(r=>r.ok?r.json():null)
-    .then(d=>{ if(d&&d.code){ v.code=d.code; renderCode(); } })
+    .then(d=>{ if(d&&d.code&&onCode) onCode(d.code); })
     .catch(()=>{});
 }
 function renderCode(){
@@ -536,6 +546,22 @@ function showVersion(i){
   const im=new Image();im.src=S.concept;im.alt='AI concept of your jersey';cv.append(im);
   drawVersions();
   renderCode();
+  showSocks();
+}
+/* Socks hang off the design they were drawn from, so clicking back to another
+   design shows that one's socks — or the button to draw them. */
+function showSocks(){
+  const v=S.vIndex<0?null:S.versions[S.vIndex];
+  const box=$('#socks');
+  box.innerHTML='';
+  if(v&&v.socks){
+    const im=new Image();im.src=v.socks;im.alt='Socks matching your jersey';box.append(im);
+  }
+  box.hidden=!(v&&v.socks);
+  $('#pair').classList.toggle('has',!!(v&&v.socks));
+  $('#socksBtn').hidden=!v;
+  $('#socksBtn').textContent=v&&v.socks?'Redraw the socks':'Show matching socks';
+  $('#socksMsg').hidden=true;
 }
 function versionName(v,i){
   return v.label ? 'Design '+(i+1)+' — '+v.label : 'Design '+(i+1);
@@ -595,6 +621,33 @@ $('#refineChips').querySelectorAll('button').forEach(b=>{
     p.focus();
   };
 });
+
+$('#socksBtn').onclick=async()=>{
+  const v=S.vIndex<0?null:S.versions[S.vIndex];
+  if(!v)return;
+  const btn=$('#socksBtn'), msg=$('#socksMsg'), box=$('#socks');
+  msg.hidden=true;
+  btn.disabled=true;btn.textContent='Drawing socks…';
+  box.hidden=false;
+  box.innerHTML='<div><div class="spin"></div><p class="ph">Matching the socks</p></div>';
+  $('#pair').classList.add('has');
+  try{
+    /* Drawn from the selected jersey, never from the brief alone — that is the
+       only way the stripes come back in the same order. */
+    const image=await askConcept($('#prompt').value.trim(),v.src,null,'socks');
+    v.socks=image;
+    showSocks();
+    saveDesign(image,'Socks — '+versionName(v,S.vIndex));
+  }catch(err){
+    // The jersey selection is left exactly as it was.
+    showSocks();
+    msg.className='saved bad';
+    msg.textContent=err.message;
+    msg.hidden=false;
+  }finally{
+    btn.disabled=false;   // showSocks() has already set the label back
+  }
+};
 
 $('#saveBtn').onclick=async()=>{
   const email=$('#saveEmail').value.trim();

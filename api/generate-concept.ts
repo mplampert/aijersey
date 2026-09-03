@@ -64,6 +64,9 @@ type Body = {
   // One of the keys of VARIANTS. Omitted on a refinement, and for anything
   // unrecognised the brief is drawn straight with no variant steer.
   variant?: string;
+  // "jersey" (the default) or "socks". Socks are always drawn from a chosen
+  // jersey, so they require a baseImage.
+  product?: string;
   // One of the keys of STYLES. Anything else falls back to DEFAULT_STYLE.
   style?: string;
   colors?: { name: string; hex: string }[];
@@ -87,8 +90,11 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Body must be JSON" }, { status: 400 });
   }
 
+  const socks = body.product === "socks";
+
   const prompt = (body.prompt || "").trim().slice(0, 600);
-  if (!prompt) {
+  // Socks are drawn off the jersey in front of them, so they do not need words.
+  if (!prompt && !(socks && body.baseImage)) {
     return Response.json(
       { error: "Describe the jersey first" },
       { status: 400 },
@@ -106,6 +112,13 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
     base = { mediaType: m[1], data: m[2] };
+  }
+
+  if (socks && !base) {
+    return Response.json(
+      { error: "Pick a jersey first — the socks are drawn to match it." },
+      { status: 400 },
+    );
   }
 
   const hit = BLOCKED.find((b) => prompt.toLowerCase().includes(b));
@@ -133,6 +146,13 @@ export async function POST(request: Request): Promise<Response> {
   // model-specific and not wired yet. Front and back are requested in one
   // image so the two views stay consistent with each other.
 
+  // Holds for anything we draw — jersey, refinement or socks — so nothing we
+  // hand back can quietly grow a logo or a made-up name.
+  const RULES_ALL = [
+    "No branding of any kind: no manufacturer logos, brand names or brand marks, no neck or collar tags, no hem tags, anywhere on the garment.",
+    "Plain neutral light grey studio background, even lighting, no hanger, no model, no props.",
+  ];
+
   // Every rule below holds for an edit too, so a refinement can't quietly
   // reintroduce branding or drift the two views apart.
   const RULES = [
@@ -140,8 +160,7 @@ export async function POST(request: Request): Promise<Response> {
     "Both views are the same physical garment: stripe placement, yoke shape, sleeve design and colour blocking must match exactly between the front and the back.",
     "The back must show a nameplate and a large two-digit number.",
     "The nameplate reads exactly NAME and the number is exactly 00 — these are placeholders, never an invented player name or number.",
-    "No branding of any kind: no manufacturer logos, brand names or brand marks, no neck or collar tags, no hem tags, anywhere on the jersey.",
-    "Plain neutral light grey studio background, even lighting, no hanger, no model, no props.",
+    ...RULES_ALL,
   ];
 
   const instruction = [
@@ -174,6 +193,20 @@ export async function POST(request: Request): Promise<Response> {
     .filter(Boolean)
     .join(" ");
 
+  // Socks are read off the attached jersey rather than off the brief, which is
+  // the only way they come back actually matching the set.
+  const socksInstruction = [
+    "Product photograph of a single pair of ice hockey socks that match the ice hockey jersey in the attached image.",
+    "Show one pair, both socks side by side, flat, front-on and at full length, from the top of the sock to the foot.",
+    "Take the colours, the stripe order, the stripe widths and the overall feel directly from the attached jersey, so the socks read as part of the same set.",
+    "Do not show the jersey itself, a player, skates, shin pads or any other garment — only the socks.",
+    "No lettering, numbers, names or crests anywhere on the socks.",
+    ...RULES_ALL,
+    colorLine,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   try {
     if (base) {
       const { files } = await generateText({
@@ -182,7 +215,7 @@ export async function POST(request: Request): Promise<Response> {
           {
             role: "user",
             content: [
-              { type: "text", text: editInstruction },
+              { type: "text", text: socks ? socksInstruction : editInstruction },
               { type: "file", data: base.data, mediaType: base.mediaType },
             ],
           },
@@ -195,7 +228,11 @@ export async function POST(request: Request): Promise<Response> {
         // rather than falling back to a fresh generation, which would throw
         // away the design the customer is refining.
         return Response.json(
-          { error: "That change didn't come back as an image. Try describing it differently." },
+          {
+            error: socks
+              ? "The socks didn't come back as an image. Try again in a moment."
+              : "That change didn't come back as an image. Try describing it differently.",
+          },
           { status: 502 },
         );
       }
