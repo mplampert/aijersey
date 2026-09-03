@@ -1,4 +1,5 @@
 import { experimental_generateImage as generateImage, generateText } from "ai";
+import { checkImage } from "./check-image.ts";
 
 /**
  * POST /api/generate-concept
@@ -83,6 +84,47 @@ async function twice<T>(
   }
   return null;
 }
+
+type Made = { base64: string; mediaType: string };
+
+/**
+ * Draws, then has the image checked for real-world marks. Prompting alone does
+ * not stop image models putting an NHL shield on a collar — they are trained on
+ * real hockey photography — so a positive verdict buys one redraw that names
+ * what was seen. If the redraw is dirty too the variant is dropped: better one
+ * option short than a jersey we cannot sell.
+ *
+ * Every rejection is logged so the rate and the repeat offenders are visible.
+ */
+async function drawClean(
+  what: string,
+  make: (extra: string) => Promise<Made | null>,
+): Promise<Made | null | "dropped"> {
+  const first = await make("");
+  if (!first) return null;
+
+  const verdict = await checkImage({ data: first.base64, mediaType: first.mediaType });
+  if (!verdict.found) return first;
+
+  const seen = verdict.marks.join(", ") || "a real-world mark";
+  console.warn("image-check: rejected, redrawing", { what, marks: verdict.marks });
+
+  const second = await make(
+    `A previous attempt showed ${seen}. Do not include ${seen}, or any other real-world league, team, brand or manufacturer mark, anywhere on the garment or its collar.`,
+  );
+  if (!second) return null;
+
+  const after = await checkImage({ data: second.base64, mediaType: second.mediaType });
+  if (!after.found) return second;
+
+  console.warn("image-check: dropped after redraw", { what, marks: after.marks });
+  return "dropped";
+}
+
+const DROPPED = {
+  error:
+    "One take kept coming back with a real team's logo on it, so we left it out. Try again for another.",
+};
 
 /** One multimodal draw: the text plus whatever reference images go with it. */
 async function draw(
@@ -237,12 +279,15 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     if (base) {
-      const edited = await twice("edit", () =>
-        draw([
-          { type: "text", text: editInstruction },
-          { type: "file", data: base!.data, mediaType: base!.mediaType },
-        ]),
+      const edited = await drawClean("refinement", (extra) =>
+        twice("edit", () =>
+          draw([
+            { type: "text", text: extra ? `${editInstruction} ${extra}` : editInstruction },
+            { type: "file", data: base!.data, mediaType: base!.mediaType },
+          ]),
+        ),
       );
+      if (edited === "dropped") return Response.json(DROPPED, { status: 422 });
       if (!edited) {
         // The model answered in text instead of returning an image. Say so
         // rather than falling back to a fresh generation, which would throw
@@ -259,12 +304,15 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     if (logo) {
-      const drawn = await twice("logo generation", () =>
-        draw([
-          { type: "text", text: logoInstruction },
-          { type: "file", data: logo.data, mediaType: logo.mediaType },
-        ]),
+      const drawn = await drawClean(body.variant ?? "logo generation", (extra) =>
+        twice("logo generation", () =>
+          draw([
+            { type: "text", text: extra ? `${logoInstruction} ${extra}` : logoInstruction },
+            { type: "file", data: logo.data, mediaType: logo.mediaType },
+          ]),
+        ),
       );
+      if (drawn === "dropped") return Response.json(DROPPED, { status: 422 });
       if (!drawn) {
         return Response.json(
           { error: "That didn't come back as an image. Try again in a moment." },
@@ -277,14 +325,17 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
 
-    const image = await twice("generation", async () => {
-      const { image } = await generateImage({
-        model: MODEL,
-        prompt: instruction,
-        size: "1024x1024",
-      });
-      return image ?? null;
-    });
+    const image = await drawClean(body.variant ?? "generation", (extra) =>
+      twice("generation", async () => {
+        const { image } = await generateImage({
+          model: MODEL,
+          prompt: extra ? `${instruction} ${extra}` : instruction,
+          size: "1024x1024",
+        });
+        return image ?? null;
+      }),
+    );
+    if (image === "dropped") return Response.json(DROPPED, { status: 422 });
     if (!image) {
       return Response.json(
         { error: "That didn't come back as an image. Try again in a moment." },
