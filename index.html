@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Design your team's jerseys</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --board:#0f2c4d;      /* rink board blue */
+  --board-lo:#16406e;
+  --ice:#e8eef2;
+  --ice-lo:#f6f8f9;
+  --puck:#14171a;
+  --tape:#f2c230;       /* stick tape yellow — accent, used once per view */
+  --line:#c8d4dc;
+  --dim:#5d6b76;
+  --bad:#b3231f;
+  --ok:#1f7a4d;
+  --rad:5px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--ice-lo);color:var(--puck);
+  font:400 16px/1.55 "Barlow",system-ui,sans-serif;
+}
+h1,h2,h3,.disp{font-family:"Barlow Condensed","Barlow",sans-serif;font-weight:700;letter-spacing:.005em}
+img{max-width:100%;display:block}
+button{font:inherit}
+
+/* ---------- masthead ---------- */
+header{
+  background:var(--board);color:#fff;padding:18px 20px 20px;
+  border-bottom:5px solid var(--tape);
+}
+.wrap{max-width:1080px;margin:0 auto}
+.brand{font-family:"Barlow Condensed";font-weight:700;font-size:19px;letter-spacing:.06em;text-transform:uppercase}
+header h1{font-size:clamp(30px,7vw,50px);line-height:1.02;margin:14px 0 8px;max-width:22ch}
+header p{margin:0;max-width:52ch;color:#c3d3e2;font-size:16.5px}
+
+/* ---------- steps ---------- */
+main{max-width:1080px;margin:0 auto;padding:0 20px 60px}
+section{
+  background:#fff;border:1px solid var(--line);border-radius:var(--rad);
+  margin-top:22px;padding:20px;
+}
+.step-no{
+  font-family:"Barlow Condensed";font-weight:700;font-size:15px;
+  color:var(--board);border:1.5px solid var(--board);border-radius:50%;
+  width:27px;height:27px;display:grid;place-items:center;flex:0 0 auto;
+}
+.step-hd{display:flex;gap:11px;align-items:center;margin-bottom:4px}
+.step-hd h2{font-size:24px;margin:0}
+.note{color:var(--dim);font-size:15px;margin:0 0 16px}
+
+label.fld{display:block;font-weight:600;font-size:15px;margin:14px 0 5px}
+textarea,input[type=text],input[type=email],input[type=password],select{
+  width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:var(--rad);
+  font:inherit;background:#fff;color:var(--puck);
+}
+textarea{resize:vertical;line-height:1.5}
+:focus-visible{outline:2.5px solid var(--board);outline-offset:1px}
+
+/* ---------- designer ---------- */
+.designer{display:grid;gap:18px}
+@media(min-width:820px){.designer{grid-template-columns:1fr 1fr;align-items:start}}
+.canvas{
+  aspect-ratio:1;border:1px solid var(--line);border-radius:var(--rad);
+  background:
+    repeating-linear-gradient(90deg,#eef3f6 0 39px,#e4ebef 39px 40px),
+    var(--ice);
+  display:grid;place-items:center;text-align:center;padding:22px;overflow:hidden;position:relative;
+}
+.canvas img{width:100%;height:100%;object-fit:contain}
+.canvas .ph{color:var(--dim);font-size:15px;max-width:26ch}
+.spin{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--board);
+  border-radius:50%;animation:sp .8s linear infinite;margin:0 auto 11px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.spin{animation-duration:2.4s}}
+
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.chips button{
+  background:var(--ice);border:1px solid var(--line);border-radius:100px;
+  padding:6px 13px;font-size:14.5px;cursor:pointer;color:var(--board);
+}
+.chips button:hover{background:#dde7ed}
+
+.drop{
+  border:1.5px dashed var(--line);border-radius:var(--rad);padding:17px;text-align:center;
+  color:var(--dim);font-size:15px;cursor:pointer;background:var(--ice-lo);
+}
+.drop.has{border-style:solid;border-color:var(--board);color:var(--board);background:#fff}
+.logo-prev{display:flex;align-items:center;gap:12px;margin-top:10px}
+.logo-prev img{width:56px;height:56px;object-fit:contain;border:1px solid var(--line);border-radius:4px;background:#fff}
+
+/* ---------- colour card ---------- */
+.pal{display:grid;grid-template-columns:repeat(auto-fill,minmax(46px,1fr));gap:7px}
+.pal button{
+  aspect-ratio:1;border-radius:4px;border:1px solid rgba(0,0,0,.2);cursor:pointer;padding:0;position:relative;
+}
+.pal button[aria-pressed=true]::after{
+  content:"";position:absolute;inset:-3px;border:2.5px solid var(--board);border-radius:6px;
+}
+.picked{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px;min-height:34px;align-items:center}
+.tag{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:100px;padding:4px 11px 4px 5px;font-size:14px}
+.tag i{width:20px;height:20px;border-radius:50%;border:1px solid rgba(0,0,0,.2);display:block}
+.tag button{border:0;background:0;cursor:pointer;color:var(--dim);font-size:17px;line-height:1;padding:0 1px}
+
+/* ---------- roster ---------- */
+.roster-tools{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th{
+  text-align:left;font-family:"Barlow Condensed";font-weight:600;font-size:15px;
+  color:var(--dim);border-bottom:1.5px solid var(--line);padding:6px 8px 6px 0;
+}
+td{padding:5px 8px 5px 0;border-bottom:1px solid #eef2f4;vertical-align:middle}
+td input,td select{padding:7px 8px;font-size:15px}
+td.num input{width:66px}
+tr.err td{background:#fdf1f0}
+.msg{font-size:14.5px;margin:9px 0 0}
+.msg.bad{color:var(--bad)}
+.msg.ok{color:var(--ok)}
+.rm{border:0;background:0;color:var(--dim);cursor:pointer;font-size:19px;line-height:1;padding:0 4px}
+
+/* ---------- order ---------- */
+.lines{border-top:1.5px solid var(--line);margin-top:6px}
+.line{display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid #eef2f4}
+.line span:last-child{font-variant-numeric:tabular-nums;font-weight:600}
+.line.total{border-bottom:0;font-family:"Barlow Condensed";font-size:22px;font-weight:700;padding-top:14px}
+.addon{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid #eef2f4}
+.addon input{margin-top:5px;width:19px;height:19px;flex:0 0 auto}
+.addon div{flex:1}
+.addon b{font-weight:600}
+.addon small{display:block;color:var(--dim);font-size:14px}
+
+.cta{
+  width:100%;background:var(--board);color:#fff;border:0;border-radius:var(--rad);
+  padding:15px;font-family:"Barlow Condensed";font-weight:700;font-size:20px;
+  letter-spacing:.02em;cursor:pointer;margin-top:16px;
+}
+.cta:hover{background:var(--board-lo)}
+.cta[disabled]{background:#9fb0bd;cursor:not-allowed}
+.ghost{
+  background:#fff;border:1.5px solid var(--board);color:var(--board);border-radius:var(--rad);
+  padding:9px 15px;font-weight:600;font-size:15px;cursor:pointer;
+}
+
+/* ---------- disclaimer ---------- */
+.disclaimer{
+  background:#fffbec;border:1px solid #e6d193;border-left:4px solid var(--tape);
+  border-radius:var(--rad);padding:14px 16px;font-size:15px;margin-top:16px;
+}
+.disclaimer b{font-weight:600}
+
+.acct{display:grid;gap:0}
+@media(min-width:640px){.acct{grid-template-columns:1fr 1fr;gap:0 18px}}
+footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;text-align:center}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="brand">Custom sublimated hockey</div>
+    <h1>Describe the jersey. See it before you pay.</h1>
+    <p>Design it here, upload your roster, and we send a final proof from our factory within 48 hours for you to approve.</p>
+  </div>
+</header>
+
+<main>
+
+  <!-- 1 ................................................. DESIGN -->
+  <section>
+    <div class="step-hd"><span class="step-no">1</span><h2>Design</h2></div>
+    <p class="note">Say what you want. Add your logo if you have one.</p>
+
+    <div class="designer">
+      <div class="canvas" id="canvas">
+        <p class="ph" id="ph">Your concept shows up here.</p>
+      </div>
+
+      <div>
+        <label class="fld" for="prompt">What should it look like?</label>
+        <textarea id="prompt" rows="4" placeholder="Navy and gold, old-school stripes, pelican crest, tropical palms on the sleeves"></textarea>
+        <div class="chips" id="chips"></div>
+
+        <label class="fld" for="logo">Your logo <span style="font-weight:400;color:var(--dim)">— optional, PNG or SVG</span></label>
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Upload your logo">
+          Tap to upload, or drag a file here
+        </div>
+        <input type="file" id="logo" accept="image/*" hidden>
+        <div class="logo-prev" id="logoPrev" hidden>
+          <img id="logoImg" alt="Your uploaded logo">
+          <div><span id="logoName" style="font-size:15px"></span>
+          <button class="rm" id="logoRm" aria-label="Remove logo">&times;</button></div>
+        </div>
+
+        <button class="cta" id="gen">Show me the concept</button>
+      </div>
+    </div>
+
+    <div class="disclaimer">
+      <b>About this concept.</b> It's generated by AI, so treat it as the idea, not the finished jersey.
+      Our factory redraws it as close as possible for production. You'll get a final proof within 48 hours
+      and nothing is built until you approve that proof.
+    </div>
+  </section>
+
+  <!-- 2 ................................................. COLOURS -->
+  <section>
+    <div class="step-hd"><span class="step-no">2</span><h2>Colours</h2></div>
+    <p class="note">Pick the colours you want us to hit. These are matched on real jersey fabric — screens lie, this card doesn't.</p>
+    <div class="pal" id="pal"></div>
+    <div class="picked" id="picked"><span style="color:var(--dim);font-size:15px">Nothing picked yet</span></div>
+  </section>
+
+  <!-- 3 ................................................. ROSTER -->
+  <section>
+    <div class="step-hd"><span class="step-no">3</span><h2>Roster</h2></div>
+    <p class="note">Paste it, upload a CSV, or type it in. Minimum order is <span id="moqTxt"></span> jerseys.</p>
+
+    <div class="roster-tools">
+      <button class="ghost" id="addRow">Add a player</button>
+      <button class="ghost" id="pasteBtn">Paste a list</button>
+      <button class="ghost" id="csvBtn">Upload CSV</button>
+      <input type="file" id="csv" accept=".csv,.txt" hidden>
+    </div>
+
+    <div id="pasteBox" hidden>
+      <label class="fld" for="pasteArea">One player per line — number, name, size. Add <em>G</em> for goalies.</label>
+      <textarea id="pasteArea" rows="6" placeholder="12 Sullivan L&#10;9 Kowalski XL&#10;31 Tremblay L G"></textarea>
+      <button class="ghost" id="pasteGo" style="margin-top:9px">Add these players</button>
+    </div>
+
+    <table>
+      <thead><tr><th style="width:80px">No.</th><th>Name</th><th style="width:104px">Size</th><th style="width:64px">Goalie</th><th style="width:34px"></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="msg" id="rosterMsg"></p>
+  </section>
+
+  <!-- 4 ................................................. ORDER -->
+  <section>
+    <div class="step-hd"><span class="step-no">4</span><h2>Order</h2></div>
+    <p class="note">Add the rest of the kit — same design, no extra art work.</p>
+
+    <div id="addons"></div>
+
+    <div class="lines" id="lines"></div>
+
+    <h3 style="font-size:20px;margin:22px 0 4px">Your account</h3>
+    <p class="note">So you can approve the proof and reorder next season without redoing any of this.</p>
+    <div class="acct">
+      <div><label class="fld" for="team">Team or organisation</label><input type="text" id="team" placeholder="Beverly Bandits"></div>
+      <div><label class="fld" for="contact">Your name</label><input type="text" id="contact"></div>
+      <div><label class="fld" for="email">Email</label><input type="email" id="email" placeholder="you@team.com"></div>
+      <div><label class="fld" for="pw">Password</label><input type="password" id="pw" autocomplete="new-password"></div>
+    </div>
+
+    <button class="cta" id="checkout" disabled>Add a roster to continue</button>
+    <p class="msg" id="coMsg"></p>
+  </section>
+
+</main>
+
+<footer>Proof in 48 hours &middot; nothing built until you approve it</footer>
+
+<script>
+/* ============================================================
+   CONFIG — every number and string you'd want to change is here.
+   ============================================================ */
+const CFG = {
+  moq: 12,
+  jerseyPrice: 49,
+  addons: [
+    {id:'socks',  label:'Matching socks',        price:19, note:'Same design, sublimated.'},
+    {id:'shells', label:'Pant shells',           price:39, note:'Team colours with your crest.'},
+    {id:'practice',label:'Practice jerseys',     price:24, note:'Solid with logo. One per player.'},
+    {id:'bag',    label:'Player bags',           price:69, note:'Embroidered logo, senior size.'},
+  ],
+  sizes: ['YS','YM','YL','S','M','L','XL','2XL','3XL'],
+  // Factory-matched colour card. Swap these for your real swatches.
+  card: [
+    ['White','#ffffff'],['Silver','#c9ccd1'],['Steel','#8b9199'],['Graphite','#4a5058'],
+    ['Black','#141619'],['Vegas Gold','#b39056'],['Athletic Gold','#f0b323'],['Orange','#e4652a'],
+    ['Scarlet','#c8102e'],['Maroon','#6f263d'],['Pink','#e58fa6'],['Purple','#4b2e83'],
+    ['Royal','#1f4fa3'],['Navy','#1b2f5e'],['Columbia','#5b9bd5'],['Teal','#00857d'],
+    ['Kelly','#187a3c'],['Forest','#154734'],['Lime','#7cc242'],['Cream','#efe7d3'],
+  ],
+  ideas: ['Old-school stripes','Tropical / island','Camo military night','Retro 90s','Blackout','Pink in the rink'],
+  endpoint: '/api/generate-concept'   // Netlify function
+};
+
+const $ = s => document.querySelector(s);
+const money = n => '$' + n.toLocaleString('en-US');
+
+/* ---------------- state ---------------- */
+const S = { logo:null, colors:[], roster:[], addons:{}, concept:null };
+
+/* ---------------- 1. design ---------------- */
+CFG.ideas.forEach(t=>{
+  const b=document.createElement('button');
+  b.type='button';b.textContent=t;
+  b.onclick=()=>{
+    const p=$('#prompt');
+    p.value = p.value.trim() ? p.value.trim().replace(/,\s*$/,'') + ', ' + t.toLowerCase() : t;
+    p.focus();
+  };
+  $('#chips').append(b);
+});
+
+const drop=$('#drop'), logoIn=$('#logo');
+drop.onclick=()=>logoIn.click();
+drop.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();logoIn.click();}};
+drop.ondragover=e=>{e.preventDefault();drop.classList.add('has');};
+drop.ondragleave=()=>drop.classList.remove('has');
+drop.ondrop=e=>{e.preventDefault();if(e.dataTransfer.files[0])takeLogo(e.dataTransfer.files[0]);};
+logoIn.onchange=e=>{if(e.target.files[0])takeLogo(e.target.files[0]);};
+
+function takeLogo(f){
+  if(!f.type.startsWith('image/')){alert('That file isn\'t an image.');return;}
+  const r=new FileReader();
+  r.onload=()=>{
+    S.logo={name:f.name,data:r.result};
+    $('#logoImg').src=r.result;
+    $('#logoName').textContent=f.name;
+    $('#logoPrev').hidden=false;
+    drop.classList.add('has');
+    drop.textContent='Logo added — tap to replace';
+  };
+  r.readAsDataURL(f);
+}
+$('#logoRm').onclick=()=>{
+  S.logo=null;$('#logoPrev').hidden=true;logoIn.value='';
+  drop.classList.remove('has');drop.textContent='Tap to upload, or drag a file here';
+};
+
+$('#gen').onclick=async()=>{
+  const prompt=$('#prompt').value.trim();
+  if(!prompt){$('#prompt').focus();return;}
+  const cv=$('#canvas'), btn=$('#gen');
+  btn.disabled=true;btn.textContent='Generating…';
+  cv.innerHTML='<div><div class="spin"></div><p class="ph">Drawing your concept</p></div>';
+  try{
+    const res=await fetch(CFG.endpoint,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({prompt,colors:S.colors,logo:S.logo?S.logo.data:null})
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const {image}=await res.json();
+    if(!image) throw new Error('No image returned');
+    S.concept=image;
+    cv.innerHTML='';
+    const im=new Image();im.src=image;im.alt='AI concept of your jersey';cv.append(im);
+  }catch(err){
+    cv.innerHTML='<p class="ph">Couldn\'t reach the image service.<br><span style="font-size:13.5px">'
+      + err.message + ' — set GEMINI_API_KEY and deploy the function.</span></p>';
+  }finally{
+    btn.disabled=false;btn.textContent='Show me the concept';
+  }
+};
+
+/* ---------------- 2. colours ---------------- */
+CFG.card.forEach(([name,hex])=>{
+  const b=document.createElement('button');
+  b.type='button';b.style.background=hex;b.title=name;b.dataset.hex=hex;b.dataset.name=name;
+  b.setAttribute('aria-label',name);b.setAttribute('aria-pressed','false');
+  b.onclick=()=>{
+    const i=S.colors.findIndex(c=>c.hex===hex);
+    if(i>-1) S.colors.splice(i,1); else S.colors.push({name,hex});
+    drawPicked();
+  };
+  $('#pal').append(b);
+});
+function drawPicked(){
+  document.querySelectorAll('#pal button').forEach(b=>
+    b.setAttribute('aria-pressed', S.colors.some(c=>c.hex===b.dataset.hex)?'true':'false'));
+  const box=$('#picked');box.innerHTML='';
+  if(!S.colors.length){box.innerHTML='<span style="color:var(--dim);font-size:15px">Nothing picked yet</span>';return;}
+  S.colors.forEach(c=>{
+    const t=document.createElement('span');t.className='tag';
+    const i=document.createElement('i');i.style.background=c.hex;
+    const s=document.createElement('span');s.textContent=c.name;
+    const x=document.createElement('button');x.type='button';x.innerHTML='&times;';
+    x.setAttribute('aria-label','Remove '+c.name);
+    x.onclick=()=>{S.colors=S.colors.filter(v=>v.hex!==c.hex);drawPicked();};
+    t.append(i,s,x);box.append(t);
+  });
+}
+
+/* ---------------- 3. roster ---------------- */
+$('#moqTxt').textContent = CFG.moq;
+
+function addPlayer(p={}){
+  S.roster.push({num:p.num||'',name:p.name||'',size:p.size||'',goalie:!!p.goalie});
+  drawRoster();
+}
+function drawRoster(){
+  const tb=$('#rows');tb.innerHTML='';
+  const dupes = new Set();
+  const seen = {};
+  S.roster.forEach(p=>{
+    if(!p.num) return;
+    if(seen[p.num]) dupes.add(p.num);
+    seen[p.num]=1;
+  });
+
+  S.roster.forEach((p,i)=>{
+    const tr=document.createElement('tr');
+    const bad = (p.num && dupes.has(p.num)) || !p.num || !p.name.trim() || !p.size;
+    if(bad) tr.className='err';
+
+    const td1=document.createElement('td');td1.className='num';
+    const n=document.createElement('input');n.type='text';n.inputMode='numeric';
+    n.value=p.num;n.maxLength=2;n.setAttribute('aria-label','Number, row '+(i+1));
+    n.oninput=e=>{p.num=e.target.value.replace(/\D/g,'');validate();};
+    n.onblur=drawRoster;td1.append(n);
+
+    const td2=document.createElement('td');
+    const nm=document.createElement('input');nm.type='text';nm.value=p.name;nm.maxLength=14;
+    nm.setAttribute('aria-label','Name, row '+(i+1));
+    nm.oninput=e=>{p.name=e.target.value;validate();};nm.onblur=drawRoster;td2.append(nm);
+
+    const td3=document.createElement('td');
+    const sz=document.createElement('select');sz.setAttribute('aria-label','Size, row '+(i+1));
+    sz.innerHTML='<option value="">—</option>'+CFG.sizes.map(s=>`<option${s===p.size?' selected':''}>${s}</option>`).join('');
+    sz.onchange=e=>{p.size=e.target.value;drawRoster();};td3.append(sz);
+
+    const td4=document.createElement('td');
+    const g=document.createElement('input');g.type='checkbox';g.checked=p.goalie;
+    g.setAttribute('aria-label','Goalie, row '+(i+1));
+    g.onchange=e=>{p.goalie=e.target.checked;validate();};td4.append(g);
+
+    const td5=document.createElement('td');
+    const rm=document.createElement('button');rm.className='rm';rm.innerHTML='&times;';
+    rm.setAttribute('aria-label','Remove row '+(i+1));
+    rm.onclick=()=>{S.roster.splice(i,1);drawRoster();};td5.append(rm);
+
+    tr.append(td1,td2,td3,td4,td5);tb.append(tr);
+  });
+  validate();
+}
+function validate(){
+  const n=S.roster.length;
+  const seen={},dupes=[];
+  S.roster.forEach(p=>{if(p.num){if(seen[p.num])dupes.push(p.num);seen[p.num]=1;}});
+  const noNum=S.roster.filter(p=>!p.num).length;
+  const noSize=S.roster.filter(p=>!p.size).length;
+  const noName=S.roster.filter(p=>!p.name.trim()).length;
+
+  const probs=[];
+  if(dupes.length) probs.push('duplicate number '+[...new Set(dupes)].join(', '));
+  if(noNum) probs.push(noNum+' missing a number');
+  if(noName) probs.push(noName+' missing a name');
+  if(noSize) probs.push(noSize+' missing a size');
+  if(n && n<CFG.moq) probs.push('need '+(CFG.moq-n)+' more to reach the '+CFG.moq+'-jersey minimum');
+
+  const m=$('#rosterMsg');
+  if(!n){m.className='msg';m.textContent='';}
+  else if(probs.length){m.className='msg bad';m.textContent='Fix before ordering: '+probs.join('; ')+'.';}
+  else{m.className='msg ok';m.textContent=n+' players, no problems found.';}
+
+  drawOrder(!probs.length && n>=CFG.moq);
+}
+
+$('#addRow').onclick=()=>addPlayer();
+$('#pasteBtn').onclick=()=>{const b=$('#pasteBox');b.hidden=!b.hidden;if(!b.hidden)$('#pasteArea').focus();};
+$('#csvBtn').onclick=()=>$('#csv').click();
+$('#csv').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();r.onload=()=>{parseList(r.result);$('#csv').value='';};r.readAsText(f);
+};
+$('#pasteGo').onclick=()=>{parseList($('#pasteArea').value);$('#pasteArea').value='';$('#pasteBox').hidden=true;};
+
+function parseList(txt){
+  const sizeSet=new Set(CFG.sizes.map(s=>s.toUpperCase()));
+  txt.split(/\r?\n/).forEach(raw=>{
+    const line=raw.trim();
+    if(!line) return;
+    if(/^(no|num|number|#)\b/i.test(line)) return;                   // header row
+    const parts=line.split(/[,\t]+|\s{2,}|\s/).filter(Boolean);
+    let num='',name=[],size='',goalie=false;
+    parts.forEach(tok=>{
+      const T=tok.toUpperCase().replace(/[^\w]/g,'');
+      if(!num && /^\d{1,2}$/.test(T)){num=T;return;}
+      if(!size && sizeSet.has(T)){size=T;return;}
+      if(/^(G|GOALIE|GOALTENDER)$/.test(T)){goalie=true;return;}
+      name.push(tok.replace(/[,\t]/g,''));
+    });
+    addPlayer({num,name:name.join(' ').slice(0,14),size,goalie});
+  });
+}
+
+/* ---------------- 4. order ---------------- */
+CFG.addons.forEach(a=>{
+  const d=document.createElement('label');d.className='addon';
+  const cb=document.createElement('input');cb.type='checkbox';
+  cb.onchange=e=>{S.addons[a.id]=e.target.checked;validate();};
+  const box=document.createElement('div');
+  box.innerHTML=`<b>${a.label} — ${money(a.price)} each</b><small>${a.note}</small>`;
+  d.append(cb,box);$('#addons').append(d);
+});
+
+function drawOrder(valid){
+  const n=S.roster.length;
+  const rows=[['Jerseys · '+n+' × '+money(CFG.jerseyPrice), n*CFG.jerseyPrice]];
+  let total=n*CFG.jerseyPrice;
+  CFG.addons.forEach(a=>{
+    if(S.addons[a.id]){
+      rows.push([a.label+' · '+n+' × '+money(a.price), n*a.price]);
+      total+=n*a.price;
+    }
+  });
+  const box=$('#lines');box.innerHTML='';
+  rows.forEach(([l,v])=>{
+    const d=document.createElement('div');d.className='line';
+    d.innerHTML=`<span>${l}</span><span>${money(v)}</span>`;box.append(d);
+  });
+  const t=document.createElement('div');t.className='line total';
+  t.innerHTML=`<span>Total</span><span>${money(total)}</span>`;box.append(t);
+
+  const btn=$('#checkout');
+  btn.disabled=!valid;
+  btn.textContent = valid ? 'Pay '+money(total)+' and start the proof'
+    : (n ? 'Fix the roster to continue' : 'Add a roster to continue');
+}
+
+$('#checkout').onclick=()=>{
+  const order={
+    design:{prompt:$('#prompt').value.trim(),logo:S.logo?S.logo.name:null,concept:!!S.concept},
+    colors:S.colors,
+    roster:S.roster,
+    addons:Object.keys(S.addons).filter(k=>S.addons[k]),
+    account:{team:$('#team').value,contact:$('#contact').value,email:$('#email').value}
+  };
+  console.log('ORDER',order);
+  $('#coMsg').className='msg bad';
+  $('#coMsg').textContent='Checkout isn\'t wired yet — order payload is in the browser console. Point this at Stripe or Shopify.';
+};
+
+drawPicked();drawOrder(false);
+</script>
+</body>
+</html>
