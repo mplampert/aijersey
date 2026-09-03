@@ -291,7 +291,7 @@ const CFG = {
     ['Kelly','#187a3c'],['Forest','#154734'],['Lime','#7cc242'],['Cream','#efe7d3'],
   ],
   ideas: ['Old-school stripes','Tropical / island','Camo military night','Retro 90s','Blackout','Pink in the rink'],
-  endpoint: '/api/generate-concept'   // Netlify function
+  endpoint: '/api/generate-concept'   // serverless function; returns { image } or { error }
 };
 
 const $ = s => document.querySelector(s);
@@ -349,15 +349,27 @@ $('#gen').onclick=async()=>{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({prompt,colors:S.colors,logo:S.logo?S.logo.data:null})
     });
-    if(!res.ok) throw new Error('HTTP '+res.status);
+    if(!res.ok){
+      const msg=await res.json().then(d=>d&&d.error,()=>null);
+      const e=new Error(msg||'Something went wrong — try again in a moment.');
+      e.guidance=res.status===422;   // trademark rejection, not a system failure
+      throw e;
+    }
     const {image}=await res.json();
     if(!image) throw new Error('No image returned');
     S.concept=image;
     cv.innerHTML='';
     const im=new Image();im.src=image;im.alt='AI concept of your jersey';cv.append(im);
   }catch(err){
-    cv.innerHTML='<p class="ph">Couldn\'t reach the image service.<br><span style="font-size:13.5px">'
-      + err.message + ' — set GEMINI_API_KEY and deploy the function.</span></p>';
+    cv.innerHTML='';
+    const p=document.createElement('p');p.className='ph';
+    if(err.guidance){p.textContent=err.message;}
+    else{
+      p.append('Couldn\'t reach the image service.',document.createElement('br'));
+      const s=document.createElement('span');s.style.fontSize='13.5px';s.textContent=err.message;
+      p.append(s);
+    }
+    cv.append(p);
   }finally{
     btn.disabled=false;btn.textContent='Show me the concept';
   }
