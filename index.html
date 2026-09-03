@@ -272,6 +272,13 @@ textarea{resize:vertical;line-height:1.5}
 
 .code{font-size:var(--t-sm);color:var(--ice-3);margin:12px 0 0}
 .code[hidden]{display:none}
+.share{margin-left:12px;display:inline-flex;gap:10px}
+.share button{
+  background:0;border:0;padding:0;color:var(--crease);font:inherit;
+  font-size:var(--t-sm);text-decoration:underline;cursor:pointer;
+}
+.share button:hover{color:var(--crease-lo)}
+.share button[hidden]{display:none}
 .code b{font-weight:700;font-size:18px;letter-spacing:.12em;color:var(--crease);font-variant-numeric:tabular-nums}
 .vers{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .vers[hidden],.refine[hidden]{display:none}
@@ -520,7 +527,13 @@ footer{
           <p class="ph" id="ph">Your concept shows up here.</p>
         </div>
 
-        <p class="code" id="codeMsg" hidden>Design code <b id="codeVal"></b></p>
+        <p class="code" id="codeMsg" hidden>Design code <b id="codeVal"></b>
+          <span class="share">
+            <button type="button" id="copyLink">Copy link</button>
+            <button type="button" id="shareLink" hidden>Share</button>
+          </span>
+        </p>
+        <p class="saved" id="shareMsg" hidden role="status"></p>
 
         <div class="vers" id="vers" hidden role="group" aria-label="Concept options"></div>
         <p class="saved" id="genMsg" hidden role="status"></p>
@@ -538,8 +551,9 @@ footer{
         </div>
 
         <div class="capture" id="capture" hidden>
-          <label class="fld" for="saveEmail">Keep this design</label>
-          <p class="note">Leave your address and we'll save it with your design code, then follow up.</p>
+          <label class="fld" for="saveEmail">Don&rsquo;t lose this design</label>
+          <p class="note">The link and the code are all there is &mdash; there&rsquo;s no account to log
+            back into. Leave your address and we can send the design back to you if you lose them.</p>
           <input type="email" id="saveEmail" placeholder="you@yourteam.com" autocomplete="email">
           <button class="ghost" id="saveBtn">Save this design for me</button>
           <p class="saved" id="saveMsg" hidden role="status"></p>
@@ -738,6 +752,7 @@ const CFG = {
     {id:'crew',  name:'Crew',         note:'Clean'},
   ],
   endpoint: '/api/generate-concept',  // serverless function; returns { image } or { error }
+  getEndpoint: '/api/get-design',     // serverless function; returns a shared design by code
   saveEndpoint: '/api/save-design'    // serverless function; returns { ok } or { error }
 };
 
@@ -1014,6 +1029,87 @@ function renderCode(){
   const v=S.vIndex<0?null:S.versions[S.vIndex];
   if(v&&v.code){$('#codeVal').textContent=v.code;$('#codeMsg').hidden=false;}
   else $('#codeMsg').hidden=true;
+  $('#shareMsg').hidden=true;
+}
+
+/* ---------------- sharing ---------------- */
+/* A design code in the address bar opens that design straight into the canvas,
+   so a captain sends one link and the team sees the jersey. Link-based only:
+   there are no accounts here, and the link carries nothing but the code. */
+const shareUrl = code => location.origin+location.pathname+'?d='+code;
+
+function sharedCode(){
+  const v=S.vIndex<0?null:S.versions[S.vIndex];
+  return v&&v.code ? v.code : null;
+}
+function shareSaid(text,ok){
+  const m=$('#shareMsg');
+  m.className='saved '+(ok?'ok':'bad');
+  m.textContent=text;m.hidden=false;
+}
+async function copyShare(){
+  const code=sharedCode();
+  if(!code) return;
+  const url=shareUrl(code);
+  try{
+    await navigator.clipboard.writeText(url);
+    shareSaid('Link copied. Anyone with it can open this design.',true);
+  }catch{
+    // Clipboard access is refused on insecure origins and by some browsers, so
+    // the link still has to be gettable by hand.
+    shareSaid('Copy this link: '+url,false);
+  }
+}
+$('#copyLink').onclick=copyShare;
+
+/* Only offered where the browser actually has a share sheet. Everywhere else
+   Copy link is the fallback, and it is always there. */
+if(navigator.share){
+  $('#shareLink').hidden=false;
+  $('#shareLink').onclick=async()=>{
+    const code=sharedCode();
+    if(!code) return;
+    try{
+      await navigator.share({
+        title:'Our team jersey',
+        text:'Here\u2019s the jersey design \u2014 design code '+code+'.',
+        url:shareUrl(code)
+      });
+    }catch(err){
+      // A cancelled share sheet is not a failure worth reporting.
+      if(err&&err.name!=='AbortError') copyShare();
+    }
+  };
+}
+
+/* Opens ?d=CODE. The design arrives without a record id by design, so it can
+   be looked at, refined or ordered, but the address capture stays shut: that
+   record belongs to whoever made it, and an address entered here would land on
+   their row. Refining files a design of your own, and it opens then. */
+async function openShared(){
+  const code=(new URLSearchParams(location.search).get('d')||'').trim().toUpperCase();
+  if(!code) return;
+  showBusy('Opening design '+code);
+  try{
+    const res=await fetch(CFG.getEndpoint+'?code='+encodeURIComponent(code));
+    const d=await res.json().catch(()=>null);
+    if(!res.ok||!d||!d.image){
+      const err=new Error((d&&d.error)||'We couldn\u2019t open design '+code+'.');
+      err.guidance=true;throw err;
+    }
+    if(Array.isArray(d.colors)&&d.colors.length){ S.colors=d.colors; drawPicked(); }
+    const st=CFG.styles.find(x=>x.name===d.style);
+    if(st){
+      S.style=st.id;
+      $('#styles').querySelectorAll('button').forEach(b=>
+        b.setAttribute('aria-pressed',b.dataset.id===st.id?'true':'false'));
+    }
+    S.versions.push({src:d.image,raw:d.image,label:'',code:d.code,recordId:null});
+    showVersion(S.versions.length-1);
+    $('#refine').hidden=false;
+  }catch(err){
+    showError(err);
+  }
 }
 function showVersion(i){
   S.vIndex=i;S.concept=S.versions[i].src;
@@ -1412,7 +1508,7 @@ $('#checkout').onclick=()=>{
   $('#coMsg').textContent='Checkout isn\'t wired yet — order payload is in the browser console. Point this at Stripe or Shopify.';
 };
 
-drawPicked();drawOrder(false);
+drawPicked();drawOrder(false);openShared();
 </script>
 </body>
 </html>
