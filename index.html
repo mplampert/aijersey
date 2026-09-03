@@ -56,7 +56,16 @@ section{
 .step-hd h2{font-size:24px;margin:0}
 .note{color:var(--dim);font-size:15px;margin:0 0 16px}
 
-label.fld{display:block;font-weight:600;font-size:15px;margin:14px 0 5px}
+label.fld,.fld{display:block;font-weight:600;font-size:15px;margin:14px 0 5px}
+.styles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.styles button{
+  border:1.5px solid var(--line);border-radius:var(--rad);background:#fff;color:var(--puck);
+  font:inherit;line-height:1.25;padding:11px 8px;text-align:center;cursor:pointer;
+}
+.styles button b{display:block;font-weight:600;font-size:15px}
+.styles button i{display:block;font-style:normal;color:var(--dim);font-size:13px;margin-top:2px}
+.styles button[aria-pressed=true]{border-color:var(--board);background:var(--ice);color:var(--board)}
+.styles button[aria-pressed=true] i{color:var(--board)}
 textarea,input[type=text],input[type=email],input[type=password],select{
   width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:var(--rad);
   font:inherit;background:#fff;color:var(--puck);
@@ -224,6 +233,9 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
       </div>
 
       <div>
+        <span class="fld">Jersey style</span>
+        <div class="styles" id="styles" role="group" aria-label="Jersey style"></div>
+
         <label class="fld" for="prompt">What should it look like?</label>
         <textarea id="prompt" rows="4" placeholder="Navy and gold, old-school stripes, pelican crest, tropical palms on the sleeves"></textarea>
         <div class="chips" id="chips"></div>
@@ -332,6 +344,13 @@ const CFG = {
     ['Kelly','#187a3c'],['Forest','#154734'],['Lime','#7cc242'],['Cream','#efe7d3'],
   ],
   ideas: ['Old-school stripes','Tropical / island','Camo military night','Retro 90s','Blackout','Pink in the rink'],
+  // Jersey silhouettes offered in step 1. The cards, the default (first entry)
+  // and the id sent to the concept endpoint all read from this list.
+  styles: [
+    {id:'laced', name:'Laced collar', note:'Traditional'},
+    {id:'vneck', name:'V-neck',       note:'Modern'},
+    {id:'crew',  name:'Crew',         note:'Clean'},
+  ],
   endpoint: '/api/generate-concept',  // serverless function; returns { image } or { error }
   saveEndpoint: '/api/save-design'    // serverless function; returns { ok } or { error }
 };
@@ -340,7 +359,7 @@ const $ = s => document.querySelector(s);
 const money = n => '$' + n.toLocaleString('en-US');
 
 /* ---------------- state ---------------- */
-const S = { logo:null, colors:[], roster:[], addons:{}, concept:null, versions:[], vIndex:-1, styles:[] };
+const S = { logo:null, colors:[], roster:[], addons:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id };
 
 /* ---------------- 1. design ---------------- */
 CFG.ideas.forEach(t=>{
@@ -353,6 +372,21 @@ CFG.ideas.forEach(t=>{
     p.focus();
   };
   $('#chips').append(b);
+});
+
+CFG.styles.forEach(st=>{
+  const b=document.createElement('button');
+  b.type='button';b.dataset.id=st.id;
+  b.setAttribute('aria-pressed',st.id===S.style?'true':'false');
+  const n=document.createElement('b');n.textContent=st.name;
+  const d=document.createElement('i');d.textContent=st.note;
+  b.append(n,d);
+  b.onclick=()=>{
+    S.style=st.id;
+    $('#styles').querySelectorAll('button').forEach(x=>
+      x.setAttribute('aria-pressed',x.dataset.id===st.id?'true':'false'));
+  };
+  $('#styles').append(b);
 });
 
 const drop=$('#drop'), logoIn=$('#logo');
@@ -386,7 +420,7 @@ $('#logoRm').onclick=()=>{
 async function askConcept(prompt,baseImage){
   const res=await fetch(CFG.endpoint,{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({prompt,colors:S.colors,logo:S.logo?S.logo.data:null,baseImage:baseImage||null})
+    body:JSON.stringify({prompt,style:S.style,colors:S.colors,logo:S.logo?S.logo.data:null,baseImage:baseImage||null})
   });
   if(!res.ok){
     const msg=await res.json().then(d=>d&&d.error,()=>null);
@@ -688,7 +722,7 @@ function drawOrder(valid){
 
 $('#checkout').onclick=()=>{
   const order={
-    design:{prompt:$('#prompt').value.trim(),logo:S.logo?S.logo.name:null,concept:!!S.concept},
+    design:{prompt:$('#prompt').value.trim(),style:S.style,logo:S.logo?S.logo.name:null,concept:!!S.concept},
     colors:S.colors,
     roster:S.roster,
     addons:Object.keys(S.addons).filter(k=>S.addons[k]),

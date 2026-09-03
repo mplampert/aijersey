@@ -34,8 +34,22 @@ const BLOCKED = [
   "bauer", "ccm", "warrior hockey",
 ];
 
+// Collar and silhouette, picked by the customer in step 1 so the garment is
+// fixed rather than invented on each call. Keys match CFG.styles in index.html.
+const STYLES: Record<string, string> = {
+  laced:
+    "The collar is a traditional laced collar: a short lace-up placket at the throat, laces visible.",
+  vneck:
+    "The collar is a modern V-neck: a clean V opening at the throat, no lacing and no placket.",
+  crew:
+    "The collar is a plain crew neck: a round ribbed collar, no lacing, no placket and no V.",
+};
+const DEFAULT_STYLE = "laced";
+
 type Body = {
   prompt?: string;
+  // One of the keys of STYLES. Anything else falls back to DEFAULT_STYLE.
+  style?: string;
   colors?: { name: string; hex: string }[];
   logo?: string | null;
   // Data URL of the concept being refined. Absent on the first generation.
@@ -106,6 +120,7 @@ export async function POST(request: Request): Promise<Response> {
   // Every rule below holds for an edit too, so a refinement can't quietly
   // reintroduce branding or drift the two views apart.
   const RULES = [
+    STYLES[body.style ?? ""] ?? STYLES[DEFAULT_STYLE],
     "Both views are the same physical garment: stripe placement, yoke shape, sleeve design and colour blocking must match exactly between the front and the back.",
     "The back must show a nameplate and a large two-digit number.",
     "The nameplate reads exactly NAME and the number is exactly 00 — these are placeholders, never an invented player name or number.",
