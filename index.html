@@ -621,6 +621,14 @@ footer{
             <div><span id="logoName" style="font-size:15px"></span>
             <button class="rm" id="logoRm" aria-label="Remove logo">&times;</button></div>
           </div>
+          <p class="note" id="logoNote" hidden>Your logo goes on exactly as supplied — we don't redraw it,
+            recolor it or change it in any way, and asking for a change to it in the details box won't reach it.
+            To change the logo, edit the file and upload it again.</p>
+          <div class="disclaimer" id="logoFlat" hidden>
+            <b>This logo has no transparent background.</b> It will sit on the jersey as a solid rectangle or
+            circle of its own background color behind the crest. Upload a version with a transparent background
+            if you don't want that. We'll use this one as it is either way.
+          </div>
         </div>
         <div id="crestName" hidden>
           <label class="fld" for="teamName">What's your team name?</label>
@@ -1031,21 +1039,53 @@ drop.ondragleave=()=>drop.classList.remove('has');
 drop.ondrop=e=>{e.preventDefault();if(e.dataTransfer.files[0])takeLogo(e.dataTransfer.files[0]);};
 logoIn.onchange=e=>{if(e.target.files[0])takeLogo(e.target.files[0]);};
 
+/* A logo whose background was flattened before export composites as a solid
+   block sitting on the jersey. Reading the border ring catches both files that
+   produce one — a format with no alpha at all, and a PNG whose transparency
+   was flattened — while a cut-out crest or a circle, transparent at the
+   corners, comes back clean. Sampling a small copy is enough to read the edges
+   and keeps a 4000px upload off the main thread. */
+async function hasFlatBackground(src){
+  const img=await loadImg(src);
+  const w=img.naturalWidth||1, h=img.naturalHeight||1;
+  const k=Math.min(1,200/Math.max(w,h));
+  const cv=document.createElement('canvas');
+  cv.width=Math.max(1,Math.round(w*k));
+  cv.height=Math.max(1,Math.round(h*k));
+  const c=cv.getContext('2d',{willReadFrequently:true});
+  c.drawImage(img,0,0,cv.width,cv.height);
+  const {data}=c.getImageData(0,0,cv.width,cv.height);
+  const opaque=(x,y)=>data[(y*cv.width+x)*4+3]>250;   // 250, not 255: edge antialiasing
+  for(let x=0;x<cv.width;x++) if(!opaque(x,0)||!opaque(x,cv.height-1)) return false;
+  for(let y=0;y<cv.height;y++) if(!opaque(0,y)||!opaque(cv.width-1,y)) return false;
+  return true;
+}
+
 function takeLogo(f){
   if(!f.type.startsWith('image/')){alert('That file isn\'t an image.');return;}
   const r=new FileReader();
-  r.onload=()=>{
-    S.logo={name:f.name,data:r.result};
+  r.onload=async()=>{
+    const mine=S.logo={name:f.name,data:r.result};
     $('#logoImg').src=r.result;
     $('#logoName').textContent=f.name;
     $('#logoPrev').hidden=false;
+    $('#logoNote').hidden=false;
+    $('#logoFlat').hidden=true;
     drop.classList.add('has');
     drop.textContent='Logo added — tap to replace';
+    /* Warn only. A flat background is worth saying out loud, never a reason to
+       refuse the file — and a check that throws must not cost them the upload. */
+    try{
+      const flat=await hasFlatBackground(r.result);
+      if(S.logo===mine) $('#logoFlat').hidden=!flat;   // a faster second upload wins
+    }catch(err){
+      console.error('transparency check failed',err);
+    }
   };
   r.readAsDataURL(f);
 }
 $('#logoRm').onclick=()=>{
-  S.logo=null;$('#logoPrev').hidden=true;logoIn.value='';
+  S.logo=null;$('#logoPrev').hidden=true;$('#logoNote').hidden=true;$('#logoFlat').hidden=true;logoIn.value='';
   drop.classList.remove('has');drop.textContent='Tap to upload, or drag a file here';
 };
 
