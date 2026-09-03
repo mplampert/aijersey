@@ -249,7 +249,7 @@ export async function POST(request: Request): Promise<Response> {
     });
 
     return Response.json({
-      image: `data:${image.mimeType ?? "image/png"};base64,${image.base64}`,
+      image: `data:${image.mediaType ?? "image/png"};base64,${image.base64}`,
     });
   } catch (err) {
     console.error("generate-concept failed", err);

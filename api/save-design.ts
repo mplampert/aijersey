@@ -33,6 +33,7 @@ const FIELD = {
   status: "fldiXTMcs43bi9pd0",
   session: "fldNJ7GYCybw4OAuf",
   created: "fld5rM5os7ZFssjJS",
+  email: "fldizSNmZ7eJrsGgL",
 } as const;
 
 // Style and Status are single selects. typecast lets Airtable match a plain
@@ -52,6 +53,11 @@ function makeCode(): string {
 }
 
 type Body = {
+  // An address arriving with a recordId attaches to that design instead of
+  // filing a new one — by the time the customer asks for a copy, the design
+  // is already on record with a code.
+  recordId?: string;
+  email?: string;
   session?: string;
   prompt?: string;
   style?: string | string[];
@@ -82,12 +88,88 @@ async function store(name: string, file: Decoded): Promise<string> {
   return blob.url;
 }
 
+// Deliberately loose. The real check is whether the mail lands.
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+function unconfigured(keys: string[]): Response | null {
+  const missing = keys.filter((k) => !process.env[k]);
+  if (!missing.length) return null;
+  console.error("save-design not configured, missing:", missing.join(", "));
+  return Response.json({ error: "Design saving isn't configured" }, { status: 503 });
+}
+
+const table = () =>
+  `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_ID}`;
+
+const airtableHeaders = () => ({
+  Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
+  "Content-Type": "application/json",
+});
+
+/**
+ * Attaches an address to a design already on file. Patches that one record —
+ * the design was saved the moment it was drawn, so creating a second row here
+ * would just split one design across two.
+ */
+async function attachEmail(recordId: string, email: string): Promise<Response> {
+  const notReady = unconfigured([
+    "AIRTABLE_TOKEN",
+    "AIRTABLE_BASE_ID",
+    "AIRTABLE_TABLE_ID",
+  ]);
+  if (notReady) return notReady;
+
+  try {
+    const res = await fetch(`${table()}/${encodeURIComponent(recordId)}`, {
+      method: "PATCH",
+      headers: airtableHeaders(),
+      body: JSON.stringify({ fields: { [FIELD.email]: email } }),
+    });
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Airtable ${res.status}: ${detail.slice(0, 300)}`);
+    }
+
+    // TODO: send the customer their copy. The design and the code are already
+    // on record, so this only needs the transactional mail — attach or link
+    // the concept, quote the code, and report a provider failure back to the
+    // page, which renders { error }. Until then the page must not tell anyone
+    // an email is on its way.
+
+    return Response.json({ ok: true });
+  } catch (err) {
+    console.error("save-design: attaching email failed", { recordId, err });
+    return Response.json(
+      { error: "We couldn't save your address against that design" },
+      { status: 502 },
+    );
+  }
+}
+
 export async function POST(request: Request): Promise<Response> {
   let body: Body;
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "Body must be JSON" }, { status: 400 });
+  }
+
+  if (body.email !== undefined || body.recordId) {
+    const email = (body.email || "").trim();
+    if (!EMAIL.test(email)) {
+      return Response.json(
+        { error: "That doesn't look like an email address — check it and try again." },
+        { status: 400 },
+      );
+    }
+    if (!body.recordId) {
+      return Response.json(
+        { error: "That design isn't on file yet, so there's nothing to attach your address to." },
+        { status: 400 },
+      );
+    }
+    return attachEmail(body.recordId, email);
   }
 
   if (!body.image) {
@@ -101,16 +183,13 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const missing = [
+  const notReady = unconfigured([
     "BLOB_READ_WRITE_TOKEN",
     "AIRTABLE_TOKEN",
     "AIRTABLE_BASE_ID",
     "AIRTABLE_TABLE_ID",
-  ].filter((k) => !process.env[k]);
-  if (missing.length) {
-    console.error("save-design not configured, missing:", missing.join(", "));
-    return Response.json({ error: "Design saving isn't configured" }, { status: 503 });
-  }
+  ]);
+  if (notReady) return notReady;
 
   const code = makeCode();
   const session = (body.session || "").trim().slice(0, 60) || "unknown";
@@ -143,25 +222,22 @@ export async function POST(request: Request): Promise<Response> {
     else if (style) console.warn("save-design: dropping unknown Style", style);
     if (logoUrl) fields[FIELD.logo] = [{ url: logoUrl }];
 
-    const res = await fetch(
-      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_ID}`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        // typecast is what lets the single selects accept a plain string.
-        body: JSON.stringify({ fields, typecast: true }),
-      },
-    );
+    const res = await fetch(table(), {
+      method: "POST",
+      headers: airtableHeaders(),
+      // typecast is what lets the single selects accept a plain string.
+      body: JSON.stringify({ fields, typecast: true }),
+    });
 
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
       throw new Error(`Airtable ${res.status}: ${detail.slice(0, 300)}`);
     }
 
-    return Response.json({ code });
+    // The record id comes back to the page so that asking for a copy later
+    // patches this row rather than filing a second one.
+    const created = await res.json().catch(() => null);
+    return Response.json({ code, id: created?.id ?? null });
   } catch (err) {
     // Never the customer's problem: the concept is already on their screen.
     console.error("save-design failed", { code, session, err });

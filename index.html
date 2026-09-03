@@ -511,12 +511,12 @@ function addVersion(image,label,select){
   else drawVersions();
   $('#refine').hidden=false;
   $('#capture').hidden=false;
-  saveDesign(v.src,versionName(v,S.versions.length-1),code=>{v.code=code;renderCode();});
+  saveDesign(v.src,versionName(v,S.versions.length-1),d=>{v.code=d.code;v.recordId=d.id||null;renderCode();});
 }
 /* Files every design as it is drawn, so a customer who loses theirs can quote
    the code back to us. Fire and forget: a save that fails costs the code, never
    the concept, which is already on screen. */
-function saveDesign(image,variant,onCode){
+function saveDesign(image,variant,onSaved){
   const collar=(CFG.styles.find(x=>x.id===S.style)||{}).name||S.style;
   fetch(CFG.saveEndpoint,{
     method:'POST',headers:{'Content-Type':'application/json'},
@@ -531,7 +531,7 @@ function saveDesign(image,variant,onCode){
     })
   })
     .then(r=>r.ok?r.json():null)
-    .then(d=>{ if(d&&d.code&&onCode) onCode(d.code); })
+    .then(d=>{ if(d&&d.code&&onSaved) onSaved(d); })
     .catch(()=>{});
 }
 function renderCode(){
@@ -649,32 +649,31 @@ $('#socksBtn').onclick=async()=>{
   }
 };
 
+/* The design is already on file with a code by the time this button appears,
+   so the address is attached to that record rather than filing a second one. */
 $('#saveBtn').onclick=async()=>{
   const email=$('#saveEmail').value.trim();
   const msg=$('#saveMsg'), btn=$('#saveBtn');
-  if(!S.concept)return;
+  const v=S.vIndex<0?null:S.versions[S.vIndex];
+  if(!v)return;
   msg.hidden=true;
   if(!email){$('#saveEmail').focus();return;}
-  btn.disabled=true;btn.textContent='Sending…';
+  btn.disabled=true;btn.textContent='Saving…';
   try{
+    if(!v.recordId) throw new Error('We couldn\'t file this design, so there\'s nothing to attach your address to. Generate it again and we\'ll pick it up.');
     const res=await fetch(CFG.saveEndpoint,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        email,
-        prompt:$('#prompt').value.trim(),
-        style:S.styles,
-        colors:S.colors,
-        image:S.concept
-      })
+      body:JSON.stringify({recordId:v.recordId,email})
     }).catch(()=>{
       throw new Error('We couldn\'t reach the server — check your connection and try again.');
     });
     if(!res.ok){
       const why=await res.json().then(d=>d&&d.error,()=>null);
-      throw new Error(why||'We couldn\'t send that just now — try again in a moment.');
+      throw new Error(why||'We couldn\'t save that just now — try again in a moment.');
     }
+    // Nothing is emailed yet, so this says only what actually happened.
     msg.className='saved ok';
-    msg.textContent='On its way to '+email+'. Check your junk folder if it hasn\'t landed in a few minutes.';
+    msg.textContent='Saved against design code '+v.code+'. Quote it any time — we\'ll be in touch at '+email+'.';
   }catch(err){
     msg.className='saved bad';
     msg.textContent=err.message;
