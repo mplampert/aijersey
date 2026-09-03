@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    // These files run as Vercel serverless functions on Node, which is why the
+    // web globals (fetch, Request, Response, crypto) and the Node globals
+    // (process, Buffer) are both in scope. Without this file tsc assumes ES5
+    // and no Node types, and reports a runtime that does not exist.
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    // Only silences declaration files inside node_modules, never our own
+    // source. @ai-sdk/provider-utils reaches for a dependency that ships no
+    // types, which is not something this project can fix.
+    "skipLibCheck": true
+  },
+  "include": ["api/**/*.ts"]
+}
