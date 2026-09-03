@@ -553,7 +553,7 @@ function buildBrief(){
  * rather than a copy of the jersey's exact striping. That is a deliberate
  * trade for correctness and speed. */
 const SOCK = {
-  dir:'/sock/',
+  dir:'/public/sock/',   // served from the repo root, so public/ stays in the path
   body:['part5','part1','band','cuffs'],   // takes the first color
   bands:['part4','part2','part3'],         // takes the second
   third:['part4'],                         // takes the third, when there is one
@@ -635,7 +635,7 @@ async function renderSocks(){
     return;
   }
   try{ await loadSock(); }
-  catch(err){ console.error('sock template failed to load',err); return; }
+  catch(err){ console.error('sock template failed to load from '+SOCK.dir,err); return; }
   if(!paintSocks()) return;
   $('#socks').hidden=false;
   $('#pair').classList.add('has');
