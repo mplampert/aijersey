@@ -58,7 +58,7 @@ section{
 
 label.fld,.fld{display:block;font-weight:600;font-size:15px;margin:14px 0 5px}
 .styles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.styles.four{grid-template-columns:repeat(auto-fit,minmax(84px,1fr))}
+.styles.four{grid-template-columns:repeat(4,1fr)}
 .styles.two{grid-template-columns:repeat(2,1fr)}
 .link{background:0;border:0;padding:0;margin-top:16px;color:var(--board);
   font:inherit;font-size:15px;text-decoration:underline;cursor:pointer}
@@ -66,6 +66,7 @@ label.fld,.fld{display:block;font-weight:600;font-size:15px;margin:14px 0 5px}
 .styles button{
   border:1.5px solid var(--line);border-radius:var(--rad);background:#fff;color:var(--puck);
   font:inherit;line-height:1.25;padding:11px 8px;text-align:center;cursor:pointer;
+  min-height:48px;
 }
 .styles button b{display:block;font-weight:600;font-size:15px}
 .styles button i{display:block;font-style:normal;color:var(--dim);font-size:13px;margin-top:2px}
@@ -81,6 +82,40 @@ textarea{resize:vertical;line-height:1.5}
 /* ---------- designer ---------- */
 .designer{display:grid;gap:18px}
 @media(min-width:820px){.designer{grid-template-columns:1fr 1fr;align-items:start}}
+/* ---------- phones ---------- */
+@media(max-width:819px){
+  /* Something to tap comes first; the empty canvas should not open the page. */
+  .designer>div:first-child{order:2}
+  .designer>div:last-child{order:1}
+}
+@media(max-width:560px){
+  main{padding:0 14px 48px}
+  section{padding:16px}
+  .styles.four{grid-template-columns:repeat(2,1fr)}
+  .canvas{padding:14px}
+  /* Comfortable targets for the two smallest controls. */
+  .tag{padding:2px 6px 2px 5px}
+  .tag button{min-width:44px;min-height:44px}
+  .rm{min-width:44px;min-height:44px}
+
+  /* The roster stops being a table and becomes one card per player: at this
+     width the fixed columns alone need more room than the screen has. */
+  .roster thead{display:none}
+  .roster,.roster tbody,.roster tr,.roster td{display:block;width:auto}
+  .roster tr{
+    border:1px solid var(--line);border-radius:var(--rad);
+    padding:10px 12px;margin-bottom:10px;background:#fff;
+  }
+  .roster tr.err{background:#fdf1f0}
+  .roster td{
+    border:0;padding:5px 0;display:grid;
+    grid-template-columns:78px minmax(0,1fr);align-items:center;gap:10px;
+  }
+  .roster td::before{content:attr(data-label);color:var(--dim);font-size:14.5px}
+  .roster td input,.roster td select{width:100%}
+  .roster td.num input{width:100%}
+  .roster td.act{grid-template-columns:1fr auto;padding-top:2px}
+}
 .canvas{
   aspect-ratio:1;border:1px solid var(--line);border-radius:var(--rad);
   background:
@@ -160,7 +195,7 @@ th{
   color:var(--dim);border-bottom:1.5px solid var(--line);padding:6px 8px 6px 0;
 }
 td{padding:5px 8px 5px 0;border-bottom:1px solid #eef2f4;vertical-align:middle}
-td input,td select{padding:7px 8px;font-size:15px}
+td input,td select{padding:8px;font-size:16px}
 td.num input{width:66px}
 tr.err td{background:#fdf1f0}
 .msg{font-size:14.5px;margin:9px 0 0}
@@ -324,7 +359,7 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
       <button class="ghost" id="pasteGo" style="margin-top:9px">Add these players</button>
     </div>
 
-    <table>
+    <table class="roster">
       <thead><tr><th style="width:80px">No.</th><th>Name</th><th style="width:104px">Size</th><th style="width:64px">Goalie</th><th style="width:34px"></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
@@ -911,28 +946,28 @@ function drawRoster(){
     const bad = (p.num && dupes.has(p.num)) || !p.num || !p.name.trim() || !p.size;
     if(bad) tr.className='err';
 
-    const td1=document.createElement('td');td1.className='num';
+    const td1=document.createElement('td');td1.className='num';td1.dataset.label='No.';
     const n=document.createElement('input');n.type='text';n.inputMode='numeric';
     n.value=p.num;n.maxLength=2;n.setAttribute('aria-label','Number, row '+(i+1));
     n.oninput=e=>{p.num=e.target.value.replace(/\D/g,'');validate();};
     n.onblur=drawRoster;td1.append(n);
 
-    const td2=document.createElement('td');
+    const td2=document.createElement('td');td2.dataset.label='Name';
     const nm=document.createElement('input');nm.type='text';nm.value=p.name;nm.maxLength=14;
     nm.setAttribute('aria-label','Name, row '+(i+1));
     nm.oninput=e=>{p.name=e.target.value;validate();};nm.onblur=drawRoster;td2.append(nm);
 
-    const td3=document.createElement('td');
+    const td3=document.createElement('td');td3.dataset.label='Size';
     const sz=document.createElement('select');sz.setAttribute('aria-label','Size, row '+(i+1));
     sz.innerHTML='<option value="">—</option>'+CFG.sizes.map(s=>`<option${s===p.size?' selected':''}>${s}</option>`).join('');
     sz.onchange=e=>{p.size=e.target.value;drawRoster();};td3.append(sz);
 
-    const td4=document.createElement('td');
+    const td4=document.createElement('td');td4.dataset.label='Goalie';
     const g=document.createElement('input');g.type='checkbox';g.checked=p.goalie;
     g.setAttribute('aria-label','Goalie, row '+(i+1));
     g.onchange=e=>{p.goalie=e.target.checked;validate();};td4.append(g);
 
-    const td5=document.createElement('td');
+    const td5=document.createElement('td');td5.className='act';td5.dataset.label='';
     const rm=document.createElement('button');rm.className='rm';rm.innerHTML='&times;';
     rm.setAttribute('aria-label','Remove row '+(i+1));
     rm.onclick=()=>{S.roster.splice(i,1);drawRoster();};td5.append(rm);
