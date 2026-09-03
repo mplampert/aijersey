@@ -195,11 +195,19 @@ export async function POST(request: Request): Promise<Response> {
 
   // Socks are read off the attached jersey rather than off the brief, which is
   // the only way they come back actually matching the set.
+  //
+  // The shape has to be spelled out: left to itself the model draws ordinary
+  // crew socks with feet and heels. Hockey socks are footless knit tubes pulled
+  // on over the shin pads, so the absence of a foot is stated more than once.
   const socksInstruction = [
-    "Product photograph of a single pair of ice hockey socks that match the ice hockey jersey in the attached image.",
-    "Show one pair, both socks side by side, flat, front-on and at full length, from the top of the sock to the foot.",
-    "Take the colours, the stripe order, the stripe widths and the overall feel directly from the attached jersey, so the socks read as part of the same set.",
-    "Do not show the jersey itself, a player, skates, shin pads or any other garment — only the socks.",
+    "Product photograph of a matching pair of ice hockey socks for the ice hockey jersey in the attached image.",
+    "Show both socks side by side, laid flat and front-on, each one hanging vertically.",
+    "Ice hockey socks are long tubular knit sleeves for the leg: they have no foot and no heel, and are open at both ends.",
+    "Each sock runs from just above the ankle to the upper thigh, roughly 30 inches long.",
+    "Horizontal stripe bands run across the leg, taking their pattern, order, widths and colours from the attached jersey so the socks are clearly part of the same set.",
+    "A plain ribbed band at the top and a plain cuff at the bottom, with no shaping for a foot or an ankle.",
+    "Never draw a foot, a heel, a toe or a sole. These are not crew socks, ankle socks, or tube socks with closed ends.",
+    "Do not show the jersey itself, a player, legs, skates, shin pads or any other garment — only the two socks.",
     "No lettering, numbers, names or crests anywhere on the socks.",
     ...RULES_ALL,
     colorLine,
