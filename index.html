@@ -365,7 +365,7 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
     </div>
 
     <table class="roster">
-      <thead><tr><th style="width:80px">No.</th><th>Name</th><th style="width:104px">Size</th><th style="width:64px">Goalie</th><th style="width:34px"></th></tr></thead>
+      <thead><tr><th style="width:80px">No.</th><th>Name</th><th style="width:104px">Size</th><th style="width:132px" id="sockTh" hidden>Sock size</th><th style="width:64px">Goalie</th><th style="width:34px"></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
     <p class="msg" id="rosterMsg"></p>
@@ -407,15 +407,16 @@ const CFG = {
   jerseyPrice: 49,
   // The rest of the kit. Each one is a plain yes/no answered in step 4 and
   // nowhere else, and none of them gets a preview — the matching designs are
-  // confirmed on the factory proof, same as the jersey. `label` is also the
-  // Airtable option name, so the two have to stay in step.
+  // confirmed on the factory proof, same as the jersey. `option` is the name
+  // the Kit items select in Airtable offers, which is not always the label.
   kit: [
-    {id:'socks',   label:'Matching socks',   price:19, note:'Same design, sublimated.'},
-    {id:'shells',  label:'Pant shells',      price:39, note:'Team colors with your crest.'},
-    {id:'practice',label:'Practice jerseys', price:24, note:'Solid with logo. One per player.'},
-    {id:'bag',     label:'Player bags',      price:69, note:'Embroidered logo, senior size.'},
+    {id:'socks',   label:'Matching socks', option:'Socks',         price:19, note:'Same design, sublimated.'},
+    {id:'soakers', label:'Skate soakers',  option:'Skate soakers', price:24, note:'Team colors. One pair per player.'},
+    {id:'bag',     label:'Player bags',    option:'Player bags',   price:69, note:'Embroidered logo, senior size.'},
   ],
   sizes: ['YS','YM','YL','S','M','L','XL','2XL','3XL'],
+  // Hockey socks run on their own scale, nothing like the jersey sizes above.
+  sockSizes: ['Junior','Intermediate','Senior'],
   // Factory-matched color card. Swap these for your real swatches.
   card: [
     ['White','#ffffff'],['Silver','#c9ccd1'],['Steel','#8b9199'],['Graphite','#4a5058'],
@@ -722,7 +723,7 @@ function showVersion(i){
   const im=new Image();im.src=S.concept;im.alt='AI concept of your jersey';cv.append(im);
   drawVersions();
   renderCode();
-  pushKit();
+  pushOrder();
 }
 function versionName(v,i){
   return v.label ? 'Design '+(i+1)+' — '+v.label : 'Design '+(i+1);
@@ -869,11 +870,14 @@ function drawPicked(){
 $('#moqTxt').textContent = CFG.moq;
 
 function addPlayer(p={}){
-  S.roster.push({num:p.num||'',name:p.name||'',size:p.size||'',goalie:!!p.goalie});
+  S.roster.push({num:p.num||'',name:p.name||'',size:p.size||'',sock:p.sock||'',goalie:!!p.goalie});
   drawRoster();
 }
 function drawRoster(){
   const tb=$('#rows');tb.innerHTML='';
+  // Sock sizes are only worth asking for once somebody has said yes to socks.
+  const socks=!!S.kit.socks;
+  $('#sockTh').hidden=!socks;
   const dupes = new Set();
   const seen = {};
   S.roster.forEach(p=>{
@@ -884,7 +888,8 @@ function drawRoster(){
 
   S.roster.forEach((p,i)=>{
     const tr=document.createElement('tr');
-    const bad = (p.num && dupes.has(p.num)) || !p.num || !p.name.trim() || !p.size;
+    const bad = (p.num && dupes.has(p.num)) || !p.num || !p.name.trim() || !p.size
+      || (socks && !p.sock);
     if(bad) tr.className='err';
 
     const td1=document.createElement('td');td1.className='num';td1.dataset.label='No.';
@@ -903,17 +908,25 @@ function drawRoster(){
     sz.innerHTML='<option value="">—</option>'+CFG.sizes.map(s=>`<option${s===p.size?' selected':''}>${s}</option>`).join('');
     sz.onchange=e=>{p.size=e.target.value;drawRoster();};td3.append(sz);
 
-    const td4=document.createElement('td');td4.dataset.label='Goalie';
+    let td4=null;
+    if(socks){
+      td4=document.createElement('td');td4.dataset.label='Sock size';
+      const sk=document.createElement('select');sk.setAttribute('aria-label','Sock size, row '+(i+1));
+      sk.innerHTML='<option value="">—</option>'+CFG.sockSizes.map(x=>`<option${x===p.sock?' selected':''}>${x}</option>`).join('');
+      sk.onchange=e=>{p.sock=e.target.value;drawRoster();};td4.append(sk);
+    }
+
+    const td5=document.createElement('td');td5.dataset.label='Goalie';
     const g=document.createElement('input');g.type='checkbox';g.checked=p.goalie;
     g.setAttribute('aria-label','Goalie, row '+(i+1));
-    g.onchange=e=>{p.goalie=e.target.checked;validate();};td4.append(g);
+    g.onchange=e=>{p.goalie=e.target.checked;validate();};td5.append(g);
 
-    const td5=document.createElement('td');td5.className='act';td5.dataset.label='';
+    const td6=document.createElement('td');td6.className='act';td6.dataset.label='';
     const rm=document.createElement('button');rm.className='rm';rm.innerHTML='&times;';
     rm.setAttribute('aria-label','Remove row '+(i+1));
-    rm.onclick=()=>{S.roster.splice(i,1);drawRoster();};td5.append(rm);
+    rm.onclick=()=>{S.roster.splice(i,1);drawRoster();};td6.append(rm);
 
-    tr.append(td1,td2,td3,td4,td5);tb.append(tr);
+    tr.append(...[td1,td2,td3,td4,td5,td6].filter(Boolean));tb.append(tr);
   });
   validate();
 }
@@ -924,12 +937,14 @@ function validate(){
   const noNum=S.roster.filter(p=>!p.num).length;
   const noSize=S.roster.filter(p=>!p.size).length;
   const noName=S.roster.filter(p=>!p.name.trim()).length;
+  const noSock=S.kit.socks ? S.roster.filter(p=>!p.sock).length : 0;
 
   const probs=[];
   if(dupes.length) probs.push('duplicate number '+[...new Set(dupes)].join(', '));
   if(noNum) probs.push(noNum+' missing a number');
   if(noName) probs.push(noName+' missing a name');
   if(noSize) probs.push(noSize+' missing a size');
+  if(noSock) probs.push(noSock+' missing a sock size');
   if(n && n<CFG.moq) probs.push('need '+(CFG.moq-n)+' more to reach the '+CFG.moq+'-jersey minimum');
 
   const m=$('#rosterMsg');
@@ -938,6 +953,7 @@ function validate(){
   else{m.className='msg ok';m.textContent=n+' players, no problems found.';}
 
   drawOrder(!probs.length && n>=CFG.moq);
+  pushOrder();
 }
 
 $('#addRow').onclick=()=>addPlayer();
@@ -990,8 +1006,9 @@ CFG.kit.forEach(k=>{
       grp.querySelectorAll('button').forEach(x=>
         x.setAttribute('aria-pressed',x===b?'true':'false'));
       drawKitNote();
-      pushKit();
-      validate();
+      // The sock size column lives and dies with this answer, and drawRoster
+      // ends in validate(), which files the change.
+      drawRoster();
     };
     grp.append(b);
   });
@@ -1003,22 +1020,35 @@ function drawKitNote(){
   $('#kitNote').hidden = !kitChosen().length;
 }
 
-/* The kit answers belong to the design being ordered, so they go onto that
-   record as they are given rather than waiting for a checkout that isn't
-   wired yet. Debounced: four answers are four clicks, not four writes. */
-let kitPush;
-function pushKit(){
+/* The roster and the kit answers belong to the design being ordered, so they
+   go onto that record as they are given rather than waiting for a checkout
+   that isn't wired yet. A roster abandoned halfway is still a lead, and until
+   this ran it lived nowhere but the customer's browser.
+
+   Debounced, because this fires on every keystroke in the roster. Patches the
+   record the design was filed under — never opens a second one — so there is
+   nothing to send until a design has actually been drawn. Selecting a design
+   pushes again, which covers a roster typed before the concept existed. */
+let orderPush;
+function pushOrder(){
   const v=S.vIndex<0?null:S.versions[S.vIndex];
   if(!v||!v.recordId) return;
-  const recordId=v.recordId, kit=kitChosen().map(k=>k.label);
-  clearTimeout(kitPush);
-  kitPush=setTimeout(()=>{
+  const recordId=v.recordId;
+  const body={
+    recordId,
+    roster:S.roster,
+    kit:kitChosen().map(k=>k.option),
+    team:$('#team').value
+  };
+  clearTimeout(orderPush);
+  orderPush=setTimeout(()=>{
     fetch(CFG.saveEndpoint,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({recordId,kit})
+      body:JSON.stringify(body)
     }).catch(()=>{});   // the customer is not waiting on this
   },700);
 }
+$('#team').oninput=pushOrder;
 
 function drawOrder(valid){
   const n=S.roster.length;

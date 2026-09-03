@@ -34,7 +34,10 @@ const FIELD = {
   session: "fldNJ7GYCybw4OAuf",
   created: "fld5rM5os7ZFssjJS",
   email: "fldizSNmZ7eJrsGgL",
-  kit: "fldfrtitFh7Xb4van",
+  kit: "fldsqik6ZInUTnwKM",
+  roster: "fldySSOUbQIBBObQQ",
+  rosterCount: "fldXNT5mBgEYudtYW",
+  team: "fldaEQKn1znas35Rt",
 } as const;
 
 // Style and Status are single selects. typecast lets Airtable match a plain
@@ -43,14 +46,10 @@ const FIELD = {
 const STYLE_OPTIONS = ["Laced collar", "V-neck", "Crew"];
 const STATUS_ON_SAVE = "Concept";
 
-// Kit is a multiple select and is written without typecast, so anything the
-// base doesn't already offer is dropped here rather than invented there.
-const KIT_OPTIONS = [
-  "Matching socks",
-  "Pant shells",
-  "Practice jerseys",
-  "Player bags",
-];
+// Kit items is a multiple select, and the patch below sends typecast, which
+// would invent an option for anything the base doesn't already offer. These
+// three are what it offers, so anything else is dropped here instead.
+const KIT_OPTIONS = ["Socks", "Skate soakers", "Player bags"];
 
 // Uppercase, with the glyphs people misread removed: no I or 1, no O or 0.
 // 32 characters, and 256 divides by 32, so the bytes below map without bias.
@@ -76,6 +75,16 @@ type Body = {
   // The matching kit the customer said yes to, by Airtable option name. None
   // of these is previewed — they are confirmed on the factory proof.
   kit?: string[];
+  // Sent on every change, so a roster that never reaches checkout is still on
+  // record. Sock size is only asked for when socks were said yes to.
+  roster?: {
+    num?: string;
+    name?: string;
+    size?: string;
+    sock?: string;
+    goalie?: boolean;
+  }[];
+  team?: string;
   image?: string | null;
   logo?: string | null;
 };
@@ -103,6 +112,20 @@ async function store(name: string, file: Decoded): Promise<string> {
 
 const colorText = (colors: Body["colors"]) =>
   (colors ?? []).map((c) => `${c.name} ${c.hex}`).join(", ");
+
+// One player per line, always the same five columns, so a half-filled roster
+// still lines up when someone reads the cell. A dash holds a column with no
+// answer — no sock size asked for, or not a goalie.
+const ROSTER_LIMIT = 100_000;   // Airtable's ceiling on a long text field
+const rosterText = (roster: Body["roster"]) =>
+  (roster ?? [])
+    .map((p) =>
+      [p.num, p.name, p.size, p.sock, p.goalie ? "G" : ""]
+        .map((v) => String(v ?? "").trim() || "-")
+        .join(", "),
+    )
+    .join("\n")
+    .slice(0, ROSTER_LIMIT);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -203,7 +226,8 @@ async function updateRecord(
     const res = await fetch(`${table()}/${encodeURIComponent(recordId)}`, {
       method: "PATCH",
       headers: airtableHeaders(),
-      body: JSON.stringify({ fields }),
+      // typecast is what lets Kit items accept plain option names.
+      body: JSON.stringify({ fields, typecast: true }),
     });
 
     if (!res.ok) {
@@ -261,6 +285,20 @@ export async function POST(request: Request): Promise<Response> {
       const unknown = kit.filter((k) => !KIT_OPTIONS.includes(k));
       if (unknown.length) console.warn("save-design: dropping unknown Kit", unknown);
       fields[FIELD.kit] = kit.filter((k) => KIT_OPTIONS.includes(k));
+    }
+    // The roster lives in the browser until this writes it down, so the page
+    // sends it on every change. An empty roster is a real answer: it clears
+    // the cell for someone who deleted every row.
+    if (body.roster !== undefined) {
+      const roster = body.roster ?? [];
+      fields[FIELD.roster] = rosterText(roster);
+      fields[FIELD.rosterCount] = roster.length;
+    }
+    // Only once there is something to write — a blank box shouldn't wipe a
+    // team name already on record.
+    if (body.team !== undefined) {
+      const team = body.team.trim();
+      if (team) fields[FIELD.team] = team.slice(0, 200);
     }
 
     if (!body.recordId) {
