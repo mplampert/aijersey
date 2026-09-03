@@ -64,6 +64,12 @@ const VARIANTS: Record<string, string> = {
     "Make this one graphic. Large-scale shapes, hard-edged color blocking, oversized motifs or angular forms running off the edges of the garment at full bleed, printed right through the sleeves and hem. High contrast and poster-like, still unmistakably a hockey jersey.",
 };
 
+/* The concept is two views side by side, so a square frame spends most of its
+   pixels on air above and below the jerseys and hands the customer two small
+   ones. Landscape first, square only if the model refuses the size — a size a
+   slug does not happen to accept must not be able to take generation down. */
+const SIZES = ["1536x1024", "1024x1024"] as const;
+
 type Ref = { data: string; mediaType: string };
 
 /**
@@ -324,12 +330,17 @@ export async function POST(request: Request): Promise<Response> {
 
     const image = await drawClean(body.variant ?? "generation", (extra) =>
       twice("generation", async () => {
-        const { image } = await generateImage({
-          model: MODEL,
-          prompt: extra ? `${instruction} ${extra}` : instruction,
-          size: "1024x1024",
-        });
-        return image ?? null;
+        const text = extra ? `${instruction} ${extra}` : instruction;
+        for (const size of SIZES) {
+          try {
+            const { image } = await generateImage({ model: MODEL, prompt: text, size });
+            if (image) return image;
+          } catch (err) {
+            if (size === SIZES[SIZES.length - 1]) throw err;
+            console.warn(`generate-concept: ${MODEL} refused ${size}, falling back`, err);
+          }
+        }
+        return null;
       }),
     );
     if (image === "dropped") return Response.json(DROPPED, { status: 422 });

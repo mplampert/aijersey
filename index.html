@@ -195,7 +195,7 @@ textarea{resize:vertical;line-height:1.5}
 
 /* ---------- designer ---------- */
 .designer{display:grid;gap:18px}
-@media(min-width:820px){.designer{grid-template-columns:1fr 1fr;align-items:start}}
+@media(min-width:820px){.designer{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);align-items:start}}
 /* ---------- phones ---------- */
 @media(max-width:819px){
   /* Something to tap comes first; the empty canvas should not open the page. */
@@ -211,7 +211,7 @@ textarea{resize:vertical;line-height:1.5}
   .sell{padding-left:0;padding-right:0}
   header{padding-left:14px;padding-right:14px}
   .styles.four{grid-template-columns:repeat(2,1fr)}
-  .canvas .ph{padding:16px;min-height:120px}
+  .canvas .ph{padding:16px}
   /* Comfortable targets for the two smallest controls. */
   .tag{padding:2px 6px 2px 5px}
   .tag button{min-width:44px;min-height:44px}
@@ -238,6 +238,12 @@ textarea{resize:vertical;line-height:1.5}
 /* The concept sits on the same pale sweep the model renders it on, lit like
    the hero. Everything around it is dark, so this is where the eye lands. */
 .canvas{
+  width:100%;
+  /* A concept is two views side by side, so the frame is a wide one — and it
+     is the same frame empty, loading and filled. Letting the image set the
+     height meant the page jumped under the customer's cursor the moment a
+     jersey landed, which is worse than a little air around a stray aspect. */
+  aspect-ratio:3/2;
   border-radius:var(--rad);
   background:
     repeating-linear-gradient(90deg,#eef3f6 0 39px,#e6ecf0 39px 40px),
@@ -245,14 +251,25 @@ textarea{resize:vertical;line-height:1.5}
   box-shadow:0 0 0 1px var(--seam),0 26px 60px -28px var(--crease-glow);
   display:grid;place-items:center;text-align:center;overflow:hidden;position:relative;
 }
-/* The image sets the height, so a wide concept fills the column instead of
-   sitting letterboxed inside a square. */
-.canvas img{width:100%;height:auto;display:block}
-/* Only the empty and loading states need a minimum size; once an image lands
-   it is what holds the box open. Dark type — this panel is a light one. */
+/* Fills the frame, whatever shape the model hands back. Pinned to the box
+   rather than laid out in it: as a grid item its row sizes to the image's own
+   height, so a percentage height has nothing definite to resolve against and a
+   tall concept just overflows and gets clipped. */
+.canvas img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
+/* The frame holds its own height now, so nothing in here needs a minimum.
+   Dark type — this panel is a light one. */
 .canvas .ph{
   color:#5a7186;font-size:var(--t-sm);max-width:26ch;
-  padding:26px;min-height:150px;display:grid;place-items:center;box-sizing:border-box;
+  padding:26px;display:grid;place-items:center;box-sizing:border-box;
+}
+/* Says what it is without competing with it. Gone the moment a real concept
+   replaces the example, because the whole canvas is rewritten to show one. */
+.example-tag{
+  position:absolute;left:10px;bottom:10px;
+  background:rgba(6,15,24,.68);color:var(--ice);
+  font-weight:600;font-stretch:88%;font-size:var(--t-xs);
+  letter-spacing:.15em;text-transform:uppercase;
+  padding:5px 11px;border-radius:100px;pointer-events:none;
 }
 .spin{width:26px;height:26px;border:3px solid #c3d0da;border-top-color:#12384f;
   border-radius:50%;animation:sp .8s linear infinite;margin:0 auto 11px}
@@ -523,8 +540,12 @@ footer{
 
     <div class="designer">
       <div>
+        <!-- Opens on an example so the biggest thing on the page is a jersey
+             rather than an empty box. Any of the hero renders works here; it is
+             replaced wholesale by the first real concept, label and all. -->
         <div class="canvas" id="canvas">
-          <p class="ph" id="ph">Your concept shows up here.</p>
+          <img src="/public/hero/jersey-01.png" alt="Example of a finished jersey concept">
+          <span class="example-tag">Example</span>
         </div>
 
         <p class="code" id="codeMsg" hidden>Design code <b id="codeVal"></b>
