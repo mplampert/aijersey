@@ -244,10 +244,10 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
         </div>
 
         <div class="capture" id="capture" hidden>
-          <label class="fld" for="saveEmail">Want a copy of this design?</label>
-          <p class="note">We'll email you this concept so you can keep it, show it to the team and pick it up again later.</p>
+          <label class="fld" for="saveEmail">Keep this design</label>
+          <p class="note">Leave your address and we'll save it with your design code, then follow up.</p>
           <input type="email" id="saveEmail" placeholder="you@yourteam.com" autocomplete="email">
-          <button class="ghost" id="saveBtn">Email me this design</button>
+          <button class="ghost" id="saveBtn">Save this design for me</button>
           <p class="saved" id="saveMsg" hidden role="status"></p>
         </div>
       </div>
@@ -679,7 +679,7 @@ $('#saveBtn').onclick=async()=>{
     msg.textContent=err.message;
   }finally{
     msg.hidden=false;
-    btn.disabled=false;btn.textContent='Email me this design';
+    btn.disabled=false;btn.textContent='Save this design for me';
   }
 };
 
