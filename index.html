@@ -95,6 +95,14 @@ textarea{resize:vertical;line-height:1.5}
 .vers img{width:52px;height:52px;object-fit:contain;display:block}
 .refine{margin-top:14px}
 .refine .ghost{margin-top:10px}
+.capture{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+.capture[hidden]{display:none}
+.capture .note{margin:0 0 9px}
+.capture .ghost{margin-top:10px}
+.saved{font-size:14.5px;margin:10px 0 0}
+.saved[hidden]{display:none}
+.saved.ok{color:var(--ok)}
+.saved.bad{color:var(--bad)}
 
 .drop{
   border:1.5px dashed var(--line);border-radius:var(--rad);padding:17px;text-align:center;
@@ -204,6 +212,14 @@ footer{background:var(--puck);color:#8d9aa4;font-size:14.5px;padding:26px 20px;t
             <button type="button">Simpler</button>
           </div>
           <button class="ghost" id="refineBtn">Refine</button>
+        </div>
+
+        <div class="capture" id="capture" hidden>
+          <label class="fld" for="saveEmail">Want a copy of this design?</label>
+          <p class="note">We'll email you this concept so you can keep it, show it to the team and pick it up again later.</p>
+          <input type="email" id="saveEmail" placeholder="you@yourteam.com" autocomplete="email">
+          <button class="ghost" id="saveBtn">Email me this design</button>
+          <p class="saved" id="saveMsg" hidden role="status"></p>
         </div>
       </div>
 
@@ -316,14 +332,15 @@ const CFG = {
     ['Kelly','#187a3c'],['Forest','#154734'],['Lime','#7cc242'],['Cream','#efe7d3'],
   ],
   ideas: ['Old-school stripes','Tropical / island','Camo military night','Retro 90s','Blackout','Pink in the rink'],
-  endpoint: '/api/generate-concept'   // serverless function; returns { image } or { error }
+  endpoint: '/api/generate-concept',  // serverless function; returns { image } or { error }
+  saveEndpoint: '/api/save-design'    // serverless function; returns { ok } or { error }
 };
 
 const $ = s => document.querySelector(s);
 const money = n => '$' + n.toLocaleString('en-US');
 
 /* ---------------- state ---------------- */
-const S = { logo:null, colors:[], roster:[], addons:{}, concept:null, versions:[], vIndex:-1 };
+const S = { logo:null, colors:[], roster:[], addons:{}, concept:null, versions:[], vIndex:-1, styles:[] };
 
 /* ---------------- 1. design ---------------- */
 CFG.ideas.forEach(t=>{
@@ -332,6 +349,7 @@ CFG.ideas.forEach(t=>{
   b.onclick=()=>{
     const p=$('#prompt');
     p.value = p.value.trim() ? p.value.trim().replace(/,\s*$/,'') + ', ' + t.toLowerCase() : t;
+    if(!S.styles.includes(t)) S.styles.push(t);
     p.focus();
   };
   $('#chips').append(b);
@@ -401,6 +419,7 @@ function addVersion(image){
   S.versions.push(image);
   showVersion(S.versions.length-1);
   $('#refine').hidden=false;
+  $('#capture').hidden=false;
 }
 function showVersion(i){
   S.vIndex=i;S.concept=S.versions[i];
@@ -448,6 +467,41 @@ $('#refineChips').querySelectorAll('button').forEach(b=>{
     p.focus();
   };
 });
+
+$('#saveBtn').onclick=async()=>{
+  const email=$('#saveEmail').value.trim();
+  const msg=$('#saveMsg'), btn=$('#saveBtn');
+  if(!S.concept)return;
+  msg.hidden=true;
+  if(!email){$('#saveEmail').focus();return;}
+  btn.disabled=true;btn.textContent='Sending…';
+  try{
+    const res=await fetch(CFG.saveEndpoint,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        email,
+        prompt:$('#prompt').value.trim(),
+        style:S.styles,
+        colors:S.colors,
+        image:S.concept
+      })
+    }).catch(()=>{
+      throw new Error('We couldn\'t reach the server — check your connection and try again.');
+    });
+    if(!res.ok){
+      const why=await res.json().then(d=>d&&d.error,()=>null);
+      throw new Error(why||'We couldn\'t send that just now — try again in a moment.');
+    }
+    msg.className='saved ok';
+    msg.textContent='On its way to '+email+'. Check your junk folder if it hasn\'t landed in a few minutes.';
+  }catch(err){
+    msg.className='saved bad';
+    msg.textContent=err.message;
+  }finally{
+    msg.hidden=false;
+    btn.disabled=false;btn.textContent='Email me this design';
+  }
+};
 
 $('#refineBtn').onclick=async()=>{
   const prompt=$('#refinePrompt').value.trim();
