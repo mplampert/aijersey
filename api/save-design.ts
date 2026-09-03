@@ -88,6 +88,70 @@ async function store(name: string, file: Decoded): Promise<string> {
   return blob.url;
 }
 
+const colorText = (colors: Body["colors"]) =>
+  (colors ?? []).map((c) => `${c.name} ${c.hex}`).join(", ");
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Airtable fetches attachment URLs itself, a moment after the record is
+ * written, and a blob that is not readable yet comes back as a broken
+ * attachment. Wait for the upload to actually be public before handing over
+ * the URL. Usually true on the first try, so this normally costs nothing.
+ */
+async function waitUntilReadable(url: string, tries = 4): Promise<boolean> {
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch(url, { method: "HEAD" });
+      if (res.ok) return true;
+    } catch {
+      // not serving yet
+    }
+    await sleep(150 * 2 ** i);
+  }
+  console.error("save-design: blob never became readable", url);
+  return false;
+}
+
+/**
+ * Reads the record back and re-sends any attachment Airtable failed to pick
+ * up. One of a batch coming back broken while its siblings worked is exactly
+ * what this catches.
+ */
+async function retryAttachments(
+  recordId: string,
+  urls: { field: string; url: string }[],
+): Promise<void> {
+  await sleep(1200);
+  try {
+    const res = await fetch(`${table()}/${encodeURIComponent(recordId)}`, {
+      headers: airtableHeaders(),
+    });
+    if (!res.ok) return;
+    const rec = await res.json();
+    const missing = urls.filter((u) => {
+      const cell = rec?.fields?.[u.field];
+      return !Array.isArray(cell) || cell.length === 0;
+    });
+    if (!missing.length) return;
+
+    console.warn("save-design: re-sending attachments", {
+      recordId,
+      fields: missing.map((m) => m.field),
+    });
+    const fields = Object.fromEntries(missing.map((m) => [m.field, [{ url: m.url }]]));
+    await fetch(`${table()}/${encodeURIComponent(recordId)}`, {
+      method: "PATCH",
+      headers: airtableHeaders(),
+      body: JSON.stringify({ fields }),
+    });
+  } catch (err) {
+    // The record itself is already saved; a broken thumbnail is not worth
+    // failing the save over.
+    console.error("save-design: attachment retry failed", { recordId, err });
+  }
+}
+
 // Deliberately loose. The real check is whether the mail lands.
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -107,11 +171,14 @@ const airtableHeaders = () => ({
 });
 
 /**
- * Attaches an address to a design already on file. Patches that one record —
- * the design was saved the moment it was drawn, so creating a second row here
- * would just split one design across two.
+ * Updates a design already on file. Patches that one record — the design was
+ * saved the moment it was drawn, so creating a second row here would just
+ * split one design across two.
  */
-async function attachEmail(recordId: string, email: string): Promise<Response> {
+async function updateRecord(
+  recordId: string,
+  fields: Record<string, unknown>,
+): Promise<Response> {
   const notReady = unconfigured([
     "AIRTABLE_TOKEN",
     "AIRTABLE_BASE_ID",
@@ -123,7 +190,7 @@ async function attachEmail(recordId: string, email: string): Promise<Response> {
     const res = await fetch(`${table()}/${encodeURIComponent(recordId)}`, {
       method: "PATCH",
       headers: airtableHeaders(),
-      body: JSON.stringify({ fields: { [FIELD.email]: email } }),
+      body: JSON.stringify({ fields }),
     });
 
     if (!res.ok) {
@@ -139,9 +206,9 @@ async function attachEmail(recordId: string, email: string): Promise<Response> {
 
     return Response.json({ ok: true });
   } catch (err) {
-    console.error("save-design: attaching email failed", { recordId, err });
+    console.error("save-design: updating the record failed", { recordId, err });
     return Response.json(
-      { error: "We couldn't save your address against that design" },
+      { error: "We couldn't save that against your design" },
       { status: 502 },
     );
   }
@@ -155,21 +222,36 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Body must be JSON" }, { status: 400 });
   }
 
+  // An address or a palette arriving with a recordId belongs to a design
+  // already on file, so it patches that row rather than opening a new one.
   if (body.email !== undefined || body.recordId) {
-    const email = (body.email || "").trim();
-    if (!EMAIL.test(email)) {
-      return Response.json(
-        { error: "That doesn't look like an email address — check it and try again." },
-        { status: 400 },
-      );
+    const fields: Record<string, unknown> = {};
+
+    if (body.email !== undefined) {
+      const email = (body.email || "").trim();
+      if (!EMAIL.test(email)) {
+        return Response.json(
+          { error: "That doesn't look like an email address — check it and try again." },
+          { status: 400 },
+        );
+      }
+      fields[FIELD.email] = email;
     }
+    // The colour card is step 2 but designs are filed in step 1, so a record
+    // is usually written before the customer has picked anything. The page
+    // sends the palette back through here whenever it changes.
+    if (body.colors !== undefined) fields[FIELD.colors] = colorText(body.colors);
+
     if (!body.recordId) {
       return Response.json(
-        { error: "That design isn't on file yet, so there's nothing to attach your address to." },
+        { error: "That design isn't on file yet, so there's nothing to attach to it." },
         { status: 400 },
       );
     }
-    return attachEmail(body.recordId, email);
+    if (!Object.keys(fields).length) {
+      return Response.json({ error: "Nothing to update" }, { status: 400 });
+    }
+    return updateRecord(body.recordId, fields);
   }
 
   if (!body.image) {
@@ -204,15 +286,18 @@ export async function POST(request: Request): Promise<Response> {
       ? await store(`designs/${session}/${code}-logo`, logo)
       : null;
 
+    // Both URLs must be serving before Airtable is told about them.
+    await Promise.all(
+      [conceptUrl, logoUrl].filter(Boolean).map((u) => waitUntilReadable(u as string)),
+    );
+
     // Airtable fetches these URLs and keeps its own copy, so the attachment
     // survives independently of the blob.
     const fields: Record<string, unknown> = {
       [FIELD.code]: code,
       [FIELD.prompt]: (body.prompt || "").trim().slice(0, 2000),
       [FIELD.variant]: variant,
-      [FIELD.colors]: (body.colors ?? [])
-        .map((c) => `${c.name} ${c.hex}`)
-        .join(", "),
+      [FIELD.colors]: colorText(body.colors),
       [FIELD.concept]: [{ url: conceptUrl }],
       [FIELD.status]: STATUS_ON_SAVE,
       [FIELD.session]: session,
@@ -237,7 +322,15 @@ export async function POST(request: Request): Promise<Response> {
     // The record id comes back to the page so that asking for a copy later
     // patches this row rather than filing a second one.
     const created = await res.json().catch(() => null);
-    return Response.json({ code, id: created?.id ?? null });
+    const id: string | null = created?.id ?? null;
+
+    if (id) {
+      const attachments = [{ field: FIELD.concept as string, url: conceptUrl }];
+      if (logoUrl) attachments.push({ field: FIELD.logo as string, url: logoUrl });
+      await retryAttachments(id, attachments);
+    }
+
+    return Response.json({ code, id });
   } catch (err) {
     // Never the customer's problem: the concept is already on their screen.
     console.error("save-design failed", { code, session, err });

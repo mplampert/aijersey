@@ -534,6 +534,27 @@ function saveDesign(image,variant,onSaved){
     .then(d=>{ if(d&&d.code&&onSaved) onSaved(d); })
     .catch(()=>{});
 }
+/* The colour card is step 2, but designs are filed as they are drawn in step
+   1 — so at save time the palette is usually still empty. Whenever it changes,
+   push it to the records already on file. Debounced: picking four colours is
+   four clicks, not four rounds of writes. */
+let colorPush;
+function pushColors(){
+  clearTimeout(colorPush);
+  colorPush=setTimeout(()=>{
+    const ids=[];
+    S.versions.forEach(v=>{
+      if(v.recordId) ids.push(v.recordId);
+      if(v.socksRecordId) ids.push(v.socksRecordId);
+    });
+    ids.forEach(recordId=>{
+      fetch(CFG.saveEndpoint,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({recordId,colors:S.colors})
+      }).catch(()=>{});   // the customer is not waiting on this
+    });
+  },700);
+}
 function renderCode(){
   const v=S.vIndex<0?null:S.versions[S.vIndex];
   if(v&&v.code){$('#codeVal').textContent=v.code;$('#codeMsg').hidden=false;}
@@ -637,7 +658,7 @@ $('#socksBtn').onclick=async()=>{
     const image=await askConcept($('#prompt').value.trim(),v.src,null,'socks');
     v.socks=image;
     showSocks();
-    saveDesign(image,'Socks — '+versionName(v,S.vIndex));
+    saveDesign(image,'Socks — '+versionName(v,S.vIndex),d=>{v.socksRecordId=d.id||null;});
   }catch(err){
     // The jersey selection is left exactly as it was.
     showSocks();
@@ -710,6 +731,7 @@ CFG.card.forEach(([name,hex])=>{
     const i=S.colors.findIndex(c=>c.hex===hex);
     if(i>-1) S.colors.splice(i,1); else S.colors.push({name,hex});
     drawPicked();
+    pushColors();
   };
   $('#pal').append(b);
 });
@@ -724,7 +746,7 @@ function drawPicked(){
     const s=document.createElement('span');s.textContent=c.name;
     const x=document.createElement('button');x.type='button';x.innerHTML='&times;';
     x.setAttribute('aria-label','Remove '+c.name);
-    x.onclick=()=>{S.colors=S.colors.filter(v=>v.hex!==c.hex);drawPicked();};
+    x.onclick=()=>{S.colors=S.colors.filter(v=>v.hex!==c.hex);drawPicked();pushColors();};
     t.append(i,s,x);box.append(t);
   });
 }
