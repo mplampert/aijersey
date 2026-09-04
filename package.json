@@ -2,6 +2,9 @@
   "name": "aijersey",
   "private": true,
   "type": "module",
+  "scripts": {
+    "dev": "node scripts/serve.js"
+  },
   "dependencies": {
     "@vercel/blob": "^2.0.0",
     "ai": "^5.0.0"
