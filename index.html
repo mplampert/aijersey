@@ -683,9 +683,12 @@ footer{
         <span class="fld">4. Collar</span>
         <div class="styles" id="styles" role="group" aria-label="Collar"></div>
 
-        <button type="button" class="link" id="moreBtn" aria-expanded="false" aria-controls="more">Add details</button>
-        <div id="more" hidden>
-          <label class="fld" for="prompt">Anything else?</label>
+        <!-- Open. This is the strongest input on the page — the theme and the chips
+             under it move a design further than colors and vibe together — and it
+             spent its life behind a link that most people never pressed. -->
+        <button type="button" class="link" id="moreBtn" aria-expanded="true" aria-controls="more">Hide details</button>
+        <div id="more">
+          <label class="fld" for="prompt">What&rsquo;s the theme?</label>
           <textarea id="prompt" rows="3" placeholder="Old-school stripes, tropical palms on the sleeves"></textarea>
           <div class="chips" id="chips"></div>
         </div>
