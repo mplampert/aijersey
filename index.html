@@ -1162,9 +1162,10 @@ function findJersey(jersey){
    found and sized against the garment it found.
  *
  * Only ever their own file. A customer who has no crest is answering "no, design
- * one for us", and what designs it is the model — the brief asks for a mascot or
- * icon at the chest, drawn into the scene rather than pasted onto it. Anything
- * composited here would land on top of that. */
+ * one for us", and what designs it is the model — the brief asks for an
+ * illustrated mascot with their team name set as a wordmark below or across it,
+ * drawn into the scene rather than pasted onto it. Anything composited here
+ * would land on top of that. */
 async function drawCrest(c, spot, W, H){
   const box = spot.box*W;
   if(S.logo){
@@ -1271,11 +1272,11 @@ $('#logoRm').onclick=()=>{
 /* Shared by the first generation and by every refinement. baseImage is the
    concept being edited, or null to draw a new one from scratch. */
 async function askConcept(prompt,baseImage,variant){
-  /* teamName is sent to be removed, never to be drawn. The brief has not
-     carried it since the crest became its own layer, but the brief is a free
-     text box and somebody typing their own team name into it is doing nothing
-     wrong — the function scrubs it back out. The roster never travels: player
-     names and numbers belong to the nameplate layer. */
+  /* teamName is sent for one clause and taken out of every other: it is set as
+     the wordmark in the chest crest, and scrubbed back out of the brief so it
+     does not also become part of the scene. The function holds the model to that
+     exact spelling and redraws anything else. The roster never travels — the
+     nameplate is a placeholder, never a real player. */
   const res=await fetch(CFG.endpoint,{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({prompt,style:S.style,variant:variant||null,colors:S.colors,

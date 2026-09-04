@@ -79,14 +79,16 @@ const STYLE_DEFAULT =
  * finished photograph in the browser, so a crest the model invents is a second
  * one sitting under ours. */
 const NEGATIVE = [
-  "no lettering on the front of the jersey", "no text on the chest",
-  "no team name", "no club name", "no city name", "no real player name",
+  "no lettering anywhere except the chest crest and the back nameplate",
+  "no misspelled words", "no invented words", "no repeated or doubled letters",
+  "no garbled text", "no city name", "no real player name",
   "no lettering on the sleeves", "no lettering on the shoulders",
   "no lettering on the collar", "no lettering on the socks",
-  "no numbers on the front", "no numbers on the socks", "no sleeve numbers",
+  "no lettering on the hem", "no numbers on the front", "no numbers on the socks",
+  "no sleeve numbers",
   "no captions", "no signage", "no signature", "no date", "no watermark",
   "no badge", "no medallion", "no shield", "no roundel", "no monogram",
-  "no wordmark", "no coat of arms", "no enclosing border around the chest motif",
+  "no coat of arms", "no enclosing border around the chest crest",
   "no brand marks", "no manufacturer logos", "no neck tags", "no hem tags",
   "no league marks", "no real-world team logos",
   "no ankle socks", "no crew socks", "no footwear", "no shoes", "no feet",
@@ -142,8 +144,11 @@ const NAMEPLATE =
   "The back view carries a large two-digit player number low on the back, with a " +
   "nameplate above it across the shoulders. The nameplate reads exactly NAME and " +
   "the number is exactly 00 — these are placeholders, never an invented player " +
-  "name or number. Both must stay clearly legible against whatever artwork sits " +
-  "behind them. The front carries no lettering at all.";
+  "name or number. The number is solid filled, in one color, with two contrast " +
+  "outlines around it: an inner outline and a second outline around that, each in " +
+  "a different color from the fill and from each other. It is never hollow, never " +
+  "outline-only, and never left as the artwork showing through. Both the number " +
+  "and the nameplate must stay clearly legible against whatever sits behind them.";
 
 /* The design has a subject. Left to itself a model gives back a stripe set on a
    solid body — the safe, sewn-twill answer it has seen most — and a customer who
@@ -160,14 +165,32 @@ const SCENE = [
 ].join(" ");
 
 /* Where the eye lands. Only when the customer has no crest of their own — when
-   they do, that file is composited onto this chest afterwards and anything the
-   model puts there ends up underneath it. */
-const MASCOT =
-  "At the centre chest of the front view, as the focal point of the design, place " +
-  "a single mascot or icon drawn from the theme: one clear subject, large enough " +
-  "to read from across the rink, sitting within the scene rather than pasted on " +
-  "top of it. It is illustration, not a badge — no enclosing circle, shield or " +
-  "roundel around it, and no lettering in or near it.";
+ * they do, that file is composited onto this chest afterwards and anything the
+ * model puts there ends up underneath it.
+ *
+ * This is the one place the team name is drawn by the model, and it is drawn at
+ * some risk: no image model sets type reliably, and asking for a name is how
+ * eleven generations in a row came back garbled. What makes it survivable is
+ * that we know the string. The checker is handed the same name and rejects
+ * anything that is not exactly it — a misspelling, a doubled letter, an invented
+ * word — so a garbled crest costs a redraw rather than reaching a customer. */
+function mascot(team: string | null): string {
+  const base =
+    "At the centre chest of the front view, as the focal point of the design, place " +
+    "a single illustrated mascot or icon drawn from the theme: one clear subject, " +
+    "large enough to read from across the rink, sitting within the scene rather than " +
+    "pasted on top of it. No enclosing circle, shield or roundel around it.";
+  if (!team) return base + " No lettering in or near it.";
+  return (
+    base +
+    ` Integrate the team name as a wordmark with it — set below the mascot, or ` +
+    `running across it — as one crest rather than two elements sharing a space. ` +
+    `The wordmark reads exactly "${team}", spelled exactly that way and nothing ` +
+    `else. It must be clean, evenly spaced, correctly spelled and legible at a ` +
+    `glance. If it cannot be set legibly at this size, make it larger rather than ` +
+    `smaller.`
+  );
+}
 
 /* This is a sublimated garment, and left alone a model reproduces what it has
    seen most of: sewn twill, a solid body with a stitched stripe set. Full-body
@@ -192,20 +215,17 @@ const VARIANTS: Record<string, string> = {
     "Make this one graphic: large-scale shapes, hard edges, oversized motifs running off the edges of the garment at full bleed. High contrast and poster-like.",
 };
 
-/* The team name, the player names and the numbers never reach the image prompt.
- * They drive the vector crest and nameplate layers, which are laid on after
- * compositing, and an image model handed a name draws it — eleven panels in a
- * row came back with it on them, garbled every time, because no image model
- * sets type legibly.
+/* The team name is used in exactly one place — the crest wordmark — and taken
+ * out of everywhere else.
  *
- * The page does not put the name in the brief any more, but the brief is a free
- * text box and a customer who types their own team name into it is doing
- * nothing wrong. So the name travels in its own field, is never interpolated
- * anywhere, and is scrubbed back out of the theme if it turns up there.
+ * It arrives in its own field, so the one clause that wants it can have it
+ * verbatim and the checker can be handed the same string to hold the model to.
+ * What it must not do is leak into the scene description, where "harbour seals
+ * tropical beach" becomes a brief for seals on a beach and, worse, a second
+ * place for the model to letter. So it is scrubbed out of the theme.
  *
- * Digits are left alone. "1970s" and "three stripes" are legitimate briefs, the
- * negative list already refuses numerals, and player numbers only exist on the
- * roster, which this endpoint is never sent. */
+ * Digits are left alone. "1970s" and "three stripes" are legitimate briefs, and
+ * player numbers only exist on the roster, which this endpoint is never sent. */
 export function scrub(theme: string, names: string[]): string {
   let out = theme;
   for (const name of names) {
@@ -236,6 +256,7 @@ export type ConceptInput = {
   collar?: string;        // one of STYLES
   variant?: string;       // one of VARIANTS
   ownCrest?: boolean;     // the customer has a logo, so leave the chest clear
+  teamName?: string|null; // set as the crest wordmark, when the model draws the crest
 };
 
 /**
@@ -259,6 +280,10 @@ export type ConceptInput = {
  * type: every word the model draws has to be thrown away.
  */
 export function buildPrompt(i: ConceptInput): string {
+  /* The chest belongs to the customer's own file or to the model's crest, never
+     both — so the wordmark and the clause that promises it read one condition,
+     not two that can drift apart. */
+  const crest = i.ownCrest ? null : i.teamName ?? null;
   return [
     SHOT,
     STYLES[i.collar ?? ""] ?? STYLES[DEFAULT_STYLE],
@@ -271,11 +296,13 @@ export function buildPrompt(i: ConceptInput): string {
     /* The chest belongs to one of them, never both. */
     i.ownCrest
       ? "Leave the centre chest of the front view clear for the team's own crest, which is composited on afterwards: no mascot, no icon, no crest, no logo, no monogram, no graphic element and no lettering of any kind there. The scene still runs across the rest of the garment, but it must settle into a calm, uncluttered area at the centre chest so a crest can sit on top of it and still read."
-      : MASCOT,
+      : mascot(crest),
     VARIANTS[i.variant ?? ""] ?? "",
     NEGATIVE,
-    // Last, because the list above is emphatic and this is its one exception.
-    "The only lettering anywhere in the image is the nameplate reading NAME and the number 00 on the back view. Nothing else in the image carries any letters, words or numbers.",
+    // Last, because the list above is emphatic and these are its exceptions.
+    crest
+      ? `Lettering appears in exactly two places: the wordmark "${crest}" in the chest crest, and the nameplate NAME with the number 00 on the back. Both must be spelled exactly as given. Nothing else in the image carries any letters, words or numbers.`
+      : "The only lettering anywhere in the image is the nameplate reading NAME and the number 00 on the back view. Nothing else in the image carries any letters, words or numbers.",
   ]
     .filter(Boolean)
     .join(" ");
@@ -316,7 +343,7 @@ type Produced =
 const FIX_MARKS =
   "A previous attempt showed %s. Do not include %s, or any other real-world league, team, brand or manufacturer mark, anywhere in the artwork.";
 const FIX_TEXT =
-  "A previous attempt had lettering on it (%s). This artwork must contain no letters, words, numbers or characters of any kind, in any language or script, however stylised or decorative. The team name is added afterwards as separate type and must never be drawn into the artwork.";
+  "A previous attempt had lettering wrong (%s). Every word in this image must be spelled exactly as specified and set cleanly and legibly. Lettering appears only where it was asked for; nowhere else in the image carries any letters, words or numbers.";
 
 /**
  * Draws, checks, and draws once more if the check came back dirty.
@@ -330,6 +357,7 @@ const FIX_TEXT =
  */
 async function produce(
   what: string,
+  crest: string | null,
   make: (extra: string) => Promise<Made | null>,
 ): Promise<Produced> {
   let last: Produced = null;
@@ -340,15 +368,16 @@ async function produce(
 
     const seenBy = { data: made.base64, mediaType: made.mediaType || "image/png" };
     const [verdict, panel] = await Promise.all([
-      checkImage(seenBy),
+      checkImage(seenBy, { crest }),
       Promise.resolve(checkPanel(seenBy)),
     ]);
 
-    /* Only the model gets a vote on lettering now. The back is supposed to carry
-       a nameplate and a number, and the pixel detector sees shapes rather than
-       characters — it cannot tell NAME from NAMF, so it fires on every correct
-       image. It stays as a log line: if it says there is type and the model says
-       there is none, one of them is wrong and that is worth being able to see. */
+    /* Only the model gets a vote on lettering. There is type on the garment by
+       design now — a crest wordmark and a back nameplate — and the pixel detector
+       sees shapes rather than characters, so it cannot tell HARBOUR from HARBUOR
+       and fires on every correct image. It stays as a log line: if it says there
+       is type and the model says there is none, one of them is wrong and that is
+       worth being able to see. */
     const lettering = verdict.lettering;
     const said = verdict.letters.join("; ") || "garbled type";
     if (!verdict.ok && panel.issues.includes("text")) {
@@ -423,10 +452,10 @@ type Body = {
   // Whether the customer has their own crest. The file itself never comes here:
   // it is composited onto the finished photograph in the browser.
   ownCrest?: boolean;
-  /* Sent so they can be removed, never so they can be drawn. See scrub(). The
-     roster is not accepted at all: player names and numbers belong to the
-     nameplate, which the model is not asked for either. */
-  teamName?: string;
+  /* The team name is set as the crest wordmark, and removed from the theme so it
+     is not also drawn into the scene. See scrub(). The roster is not accepted:
+     player names and numbers are placeholders here, never real ones. */
+  teamName?: string | null;
   playerNames?: string[];
   // One of the keys of VARIANTS. Omitted on a refinement, and for anything
   // unrecognised the brief is drawn straight with no variant steer.
@@ -450,11 +479,13 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Body must be JSON" }, { status: 400 });
   }
 
-  /* Scrubbed before it is read for anything: the block list, the prompt, the
-     edit instruction. Names reach this endpoint only to be taken back out. */
+  /* The name is kept for the crest and taken out of the scene: scrubbed before
+     the theme is read for anything, so it cannot reach the block list, the
+     subject or the edit instruction by that route. */
+  const teamName = (body.teamName ?? "").trim().slice(0, 40) || null;
   const theme = scrub(
     (body.theme || body.prompt || "").trim().slice(0, 600),
-    [body.teamName ?? "", ...(body.playerNames ?? [])].filter(Boolean),
+    [teamName ?? "", ...(body.playerNames ?? [])].filter(Boolean),
   );
   if (!theme) {
     return Response.json(
@@ -504,7 +535,12 @@ export async function POST(request: Request): Promise<Response> {
     collar: body.style,
     variant: body.variant,
     ownCrest: !!body.ownCrest,
+    teamName,
   });
+
+  /* What the checker holds the model to. Null where the model is drawing no
+     crest at all, because the customer's own file is going there instead. */
+  const crest = body.ownCrest ? null : teamName;
 
   /* An edit is told to change one thing, so the brief is not repeated — but
      everything that would break the picture is, because a refinement is just as
@@ -522,7 +558,7 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     if (base) {
-      const edited = await produce("refinement", (extra) =>
+      const edited = await produce("refinement", crest, (extra) =>
         twice("edit", () =>
           draw([
             { type: "text", text: extra ? `${editInstruction} ${extra}` : editInstruction },
@@ -545,7 +581,7 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
 
-    const drawn = await produce(body.variant ?? "generation", (extra) =>
+    const drawn = await produce(body.variant ?? "generation", crest, (extra) =>
       twice("generation", async () => {
         const text = [instruction, extra].filter(Boolean).join(" ");
         for (const size of SIZES) {

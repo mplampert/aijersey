@@ -56,8 +56,13 @@ than what it is of.
   untouched, and the chest is asked to be left clear for it. Where it goes is
   found in the pixels, since the model reframes on every generation. A customer
   who has no logo answered "design one for us", and what designs it is the model:
-  the mascot or icon at the chest is part of the artwork, so nothing is
-  composited over it.
+  an illustrated mascot with the team name set as a wordmark below or across it,
+  drawn into the scene, so nothing is composited over it.
+- **Spelling is checked, not hoped for.** The team name reaches the model for
+  that one wordmark and nowhere else, and the checker is handed the same string.
+  A crest that reads anything but that name — a misspelling, a doubled letter, an
+  invented word — is rejected and redrawn, and dropped if the redraw is wrong
+  too. Same for the back: exactly NAME and exactly 00.
 - **Colours** — factory colour card, multi-select. Passed into the prompt as the
   panel's palette, capped at five: past that a model treats the list as a
   suggestion.
@@ -80,11 +85,12 @@ than what it is of.
 
 ## What isn't
 
-- **The team name is nowhere on the concept.** The back reads NAME and 00
-  because those are placeholders the factory proof carries, and the front carries
-  a mascot rather than a wordmark. No image model sets type legibly, so a real
-  name would have to be composited — and on the chest it would land on top of the
-  mascot. Somewhere below it, or on the back nameplate, is the next question.
+- **The model is setting type again, and that is the known risk.** Eleven
+  generations in a row once came back with a garbled team name, which is why the
+  name was pulled out of the prompt in the first place. It is back, for the crest
+  wordmark only, with an exact-spelling check standing behind it — so a bad one
+  costs a take rather than reaching a customer. Expect a lower hit rate per
+  generation, and watch the drop rate in the logs.
 - **The crest constants want re-measuring.** `CREST` in `index.html` was
   measured on concepts that had no hangers and no socks in the frame. The search
   handles both — it steps over a hanger hook and a sock is too narrow to mistake

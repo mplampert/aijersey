@@ -7,12 +7,14 @@ import { generateObject, jsonSchema } from "ai";
  * a real-world mark — a league shield, a professional team crest, a brand logo —
  * and does it carry any lettering it should not.
  *
- * "Should not" rather than "any", because the back of the jersey is supposed to
- * show a nameplate and a number. Those are asked for as the exact placeholders
- * NAME and 00, which gives this one string to allow and lets it reject
- * everything else — a real name, a wrong number, type on the front or the
- * socks, and a garbled spelling of NAME, which is the failure that actually
- * happens.
+ * "Should not" rather than "any", because the kit is supposed to carry type in
+ * two places: a wordmark in the chest crest reading the team's own name, and a
+ * nameplate and number on the back. Every one of those is a known string — the
+ * caller passes the team name in, and the back is the fixed placeholders NAME
+ * and 00 — so this can hold the model to an exact spelling and reject everything
+ * else. That matters more than it sounds: a misspelt crest is the failure that
+ * actually happens, and it is the one a customer would notice last and mind
+ * most.
  *
  * Both are things image models do however firmly the prompt forbids them. They
  * are trained on real hockey imagery, which is covered in league marks and in
@@ -38,16 +40,28 @@ import { generateObject, jsonSchema } from "ai";
 // tiling, so a check runs around $0.00013 — roughly a hundredth of a cent.
 export const CHECK_MODEL = "google/gemini-2.5-flash-lite";
 
-const QUESTION = [
-  "This is a product photograph of a custom ice hockey kit made for a small club: the jersey shown front and back on hangers, with a pair of leg socks alongside.",
-  "Answer two questions about it.",
-  "First: does it show any real-world mark? That means a sports league logo or shield of any kind (the NHL shield especially), a professional, college or national team crest, or a brand or manufacturer logo such as Bauer, CCM, Nike, Adidas, Reebok or Warrior. Look at the whole kit, including the collar, the back neck, the sleeves, the shoulders, the hem and the socks. An original design invented for this club is fine and is not a real-world mark. Answer found: true only if you can actually see such a mark, and name each one you see in marks.",
-  "Second: does it show any lettering it should not?",
-  "Exactly one piece of lettering belongs here: on the BACK view of the jersey, a nameplate reading exactly NAME with a large number reading exactly 00 below it. Those two are correct and expected — do not report them.",
-  "Everything else is wrong. Report it if you see: any lettering on the front of the jersey, on the sleeves, on the shoulders, on the collar or on the socks; a real or invented player name or team name anywhere; any number other than 00; a nameplate that reads anything other than NAME, including a misspelling of it such as NAMF or NMAE; and any garbled, distorted or unreadable characters anywhere, including on the back.",
-  "Judge the back nameplate and number strictly: if the letters do not spell NAME exactly, or the number is not exactly 00, that is wrong lettering and must be reported.",
-  "Shapes that merely resemble letters — a row of trees, a skyline, a repeated motif — are not lettering. Answer lettering: true only if these are actually characters, and quote or describe what you see in letters.",
-].join(" ");
+function question(expect: { crest: string | null }): string {
+  const allowed = expect.crest
+    ? `Two pieces of lettering belong here. On the FRONT, in the chest crest, a wordmark reading exactly "${expect.crest}". On the BACK, a nameplate reading exactly NAME with a large number reading exactly 00 below it. Those are correct and expected — do not report them, as long as each is spelled exactly as given.`
+    : "Exactly one piece of lettering belongs here: on the BACK view, a nameplate reading exactly NAME with a large number reading exactly 00 below it. That is correct and expected — do not report it. The front of the jersey carries no lettering at all.";
+
+  const misspelt = expect.crest
+    ? `a chest wordmark that reads anything other than "${expect.crest}" — a misspelling, a missing or doubled letter, a different word, or characters that do not resolve into that name;`
+    : "any lettering at all on the front of the jersey;";
+
+  return [
+    "This is a product photograph of a custom ice hockey kit made for a small club: the jersey shown front and back on hangers, with a pair of leg socks alongside.",
+    "Answer two questions about it.",
+    "First: does it show any real-world mark? That means a sports league logo or shield of any kind (the NHL shield especially), a professional, college or national team crest, or a brand or manufacturer logo such as Bauer, CCM, Nike, Adidas, Reebok or Warrior. Look at the whole kit, including the collar, the back neck, the sleeves, the shoulders, the hem and the socks. An original design invented for this club is fine and is not a real-world mark. Answer found: true only if you can actually see such a mark, and name each one you see in marks.",
+    "Second: does it show any lettering it should not?",
+    allowed,
+    "Everything else is wrong. Report it if you see:",
+    misspelt,
+    "a nameplate that reads anything other than NAME, including a misspelling such as NAMF or NMAE; any number other than 00; lettering on the sleeves, the shoulders, the collar, the hem or the socks; a real or invented player name; and any garbled, distorted, doubled or unreadable characters anywhere in the image.",
+    "Read every word in the image letter by letter and compare it to what is expected. Spelling is the whole point of this question: a word that is nearly right is wrong.",
+    "Shapes that merely resemble letters — a row of trees, a skyline, a repeated motif — are not lettering. Answer lettering: true only if these are actually characters, and quote what you actually see in letters.",
+  ].join(" ");
+}
 
 export type Verdict = {
   found: boolean;
@@ -74,12 +88,12 @@ const VERDICT = jsonSchema<Answer>({
     },
     lettering: {
       type: "boolean",
-      description: "True if any lettering is visible that is not the back nameplate reading exactly NAME with the number exactly 00. A misspelt nameplate, a wrong number, or any characters on the front, sleeves, collar or socks all count as true.",
+      description: "True if any lettering is visible other than the exact strings named as expected. A misspelling of one of them counts as true.",
     },
     letters: {
       type: "array",
       items: { type: "string" },
-      description: "What the wrong lettering says or looks like and where, e.g. \"HARBUOR across the chest\" or \"nameplate reads NAMF\". Empty when lettering is false.",
+      description: "What the wrong lettering says, exactly as it appears, and where, e.g. \"crest reads HARBUOR SEALS\" or \"nameplate reads NAMF\". Empty when lettering is false.",
     },
   },
   required: ["found", "marks", "lettering", "letters"],
@@ -92,10 +106,10 @@ const VERDICT = jsonSchema<Answer>({
  * concept the customer is waiting on should not be lost because the
  * verification step broke, and the human proof is still the real gate.
  */
-export async function checkImage(image: {
-  data: string;
-  mediaType: string;
-}): Promise<Verdict> {
+export async function checkImage(
+  image: { data: string; mediaType: string },
+  expect: { crest: string | null } = { crest: null },
+): Promise<Verdict> {
   try {
     const { object } = await generateObject({
       model: CHECK_MODEL,
@@ -104,7 +118,7 @@ export async function checkImage(image: {
         {
           role: "user",
           content: [
-            { type: "text", text: QUESTION },
+            { type: "text", text: question(expect) },
             { type: "file", data: image.data, mediaType: image.mediaType },
           ],
         },
@@ -128,7 +142,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "AI_GATEWAY_API_KEY is not set" }, { status: 500 });
   }
 
-  let body: { image?: string };
+  let body: { image?: string; crest?: string };
   try {
     body = await request.json();
   } catch {
@@ -140,7 +154,10 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Send image as a base64 data URL" }, { status: 400 });
   }
 
-  const verdict = await checkImage({ mediaType: m[1], data: m[2] });
+  const verdict = await checkImage(
+    { mediaType: m[1], data: m[2] },
+    { crest: typeof body.crest === "string" ? body.crest : null },
+  );
   return Response.json({ model: CHECK_MODEL, ...verdict });
 }
 
