@@ -4,8 +4,8 @@ import {
   normalPhone, patchFields, readFields, recordIdFor, rosterText,
   type Body,
 } from "./save-design.js";
-import { createSession, readSession, stillGood, type Session } from "./stripe.js";
-import { KIT, MOQ, money, quote, refuse } from "./pricing.js";
+import { createSession, readSession, stillGood, type Session } from "../lib/stripe.js";
+import { KIT, MOQ, money, quote, refuse } from "../lib/pricing.js";
 
 /**
  * POST /api/place-order

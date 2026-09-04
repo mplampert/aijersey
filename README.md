@@ -29,6 +29,7 @@ vercel env add GHL_API_TOKEN production         # optional; the CRM row for a sa
 vercel env add GHL_LOCATION_ID production       # optional; the GHL sub-account
 vercel env add STRIPE_SECRET_KEY production     # the payment link, after proof approval
 vercel env add STRIPE_WEBHOOK_SECRET production # whsec_…; without it nothing is ever marked Paid
+vercel env add PROOF_APPROVAL_TOKEN production  # optional; lets staff approve a proof
 vercel --prod
 ```
 
@@ -40,6 +41,15 @@ need the same value. `vercel env ls` says what is actually set, which is the
 first thing to check when a function behaves as though a key is missing —
 **connecting a Blob store to the project sets `BLOB_READ_WRITE_TOKEN` on its
 own**, so that one is usually already there.
+
+### api/ and lib/
+
+**Every file in `api/` becomes a Serverless Function**, whether or not it
+exports a handler, and a Hobby deployment allows twelve. Five shared modules
+sitting in there took the count to thirteen and the build stopped. They live in
+`lib/` now — imported by the functions, deployed as none of them — which is also
+why `api/` holds nine files and no helpers. Put shared code in `lib/`; put a
+thing with a `POST` in `api/`.
 
 Local: `vercel dev` for the order page, which needs its functions. Run
 `vercel env pull .env.local` first so it has the keys — that file holds real
@@ -421,6 +431,29 @@ will not fix a bad field id — that belongs in the log. The webhook also compar
 what Stripe charged against **Order total** and warns when they differ, which
 means the roster changed while a checkout was open.
 
+### Approving the proof
+
+`api/approve-proof.ts`, `POST { code }` — and no money moves in it. Payment was
+taken at checkout, before the factory was ever asked to draw anything, because
+they will not redraw proofs for orders that never convert. By the time anybody
+is looking at a proof the order is `Paid`, so approval is about the artwork
+alone: it sets **Proof status** `Approved`, stamps **Proof approved**, and that
+is the signal production waits on. It refuses on an unpaid order anyway.
+
+Idempotent — pressing twice keeps the first approval time, because when they
+approved is a fact about them and not about how many times the request arrived.
+
+**It is not open.** Approving releases an order to production, so one of two
+credentials is required: the customer's own **Gallery id** as `t` (the
+unguessable token already in their inbox, and it unlocks only their order), or
+`PROOF_APPROVAL_TOKEN` as `Authorization: Bearer …` for staff and automations.
+With neither configured nor supplied it refuses everything — it fails closed on
+purpose, because an approval endpoint that defaults to open because an env var
+is missing is worse than one that is switched off.
+
+There is no customer-facing approve button yet. The `t` route is there so one
+can be added without touching this endpoint.
+
 ### On the record
 
 Three fields on **Designs**, created for this:
@@ -430,6 +463,7 @@ Three fields on **Designs**, created for this:
 | **Payment status** | `Unpaid` at checkout → `Paid` by the webhook. `Refunded` is by hand. |
 | **Stripe session id** | `cs_live_…`, written before the redirect |
 | **Order total** | goods only; rewritten by the webhook to what was really charged |
+| **Proof approved** | when the customer released it to production |
 
 ## Reading a failed generation
 

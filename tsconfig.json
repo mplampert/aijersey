@@ -18,5 +18,9 @@
     // types, which is not something this project can fix.
     "skipLibCheck": true
   },
-  "include": ["api/**/*.ts"]
+  // api/ holds the Vercel Serverless Functions — every file in there becomes
+  // one, whether or not it exports a handler, and a Hobby deployment allows
+  // twelve. lib/ is where the modules they share live so they don't count
+  // against that, and so five helpers aren't deployed as five functions.
+  "include": ["api/**/*.ts", "lib/**/*.ts"]
 }

@@ -1,8 +1,8 @@
 // Compiled output is .js, and the runtime resolves these specifiers verbatim.
 import { FIELD, PAY_PAID, STATUS_ORDERED, patchFields, readFields } from "./save-design.js";
-import { sendOrderConfirmation } from "./send-design.js";
-import { verifySignature } from "./stripe.js";
-import { quote } from "./pricing.js";
+import { sendOrderConfirmation } from "../lib/send-design.js";
+import { verifySignature } from "../lib/stripe.js";
+import { quote } from "../lib/pricing.js";
 
 /**
  * POST /api/stripe-webhook

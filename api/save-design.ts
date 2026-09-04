@@ -1,7 +1,7 @@
 import { list, put } from "@vercel/blob";
 // Compiled output is .js, and the runtime resolves this specifier verbatim.
-import { sendDesign } from "./send-design.js";
-import { upsertContact } from "./ghl-contact.js";
+import { sendDesign } from "../lib/send-design.js";
+import { upsertContact } from "../lib/ghl-contact.js";
 
 /**
  * POST /api/save-design
@@ -48,6 +48,7 @@ export const FIELD = {
   // The proof half of the base, which nothing wrote to until the order flow
   // did. Proof status is the gate on payment: see approve-proof.
   proofStatus: "fldm6oKZZ53gG6oyY",
+  proofApproved: "fldYlfYHss8B5NPuB",
   // Payment. Nothing here is touched at the concept stage — an order is filed
   // Unpaid and only becomes payable once the customer approves the proof.
   payment: "fldiY2sQh2pdYItaP",

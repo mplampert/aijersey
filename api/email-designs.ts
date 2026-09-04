@@ -1,6 +1,6 @@
 // Compiled output is .js, and the runtime resolves this specifier verbatim.
 import { findByEmail, galleryFor, galleryUrl, patchGallery } from "./save-design.js";
-import { sendDesign } from "./send-design.js";
+import { sendDesign } from "../lib/send-design.js";
 
 /**
  * POST /api/email-designs

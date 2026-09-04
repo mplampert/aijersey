@@ -3,7 +3,7 @@ import { APICallError, RetryError, experimental_generateImage as generateImage, 
 // so it names the built file, not the source. A ".ts" here type-checks fine
 // locally and then 500s in production.
 import { checkImage } from "./check-image.js";
-import { checkPanel, type PanelIssue } from "./check-panel.js";
+import { checkPanel, type PanelIssue } from "../lib/check-panel.js";
 
 /**
  * POST /api/generate-concept
