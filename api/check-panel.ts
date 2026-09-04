@@ -1,25 +1,24 @@
 import { inflateSync } from "node:zlib";
 
 /**
- * Cheap pixel checks on a generated artwork panel, run before it is worth
- * showing anyone.
+ * The free pixel check on a generated concept: does it have lettering on it.
  *
- * These catch the two ways the generator misses that are obvious from the
- * pixels alone and expensive to spot by eye at thumbnail size: a centred
- * subject floating on a margin, which becomes bare fabric once the compositor
- * clips it, and a palette the model quietly ignored.
+ * This used to check three other things — blank corners, a palette the model
+ * ignored, a frame that was not square — and all three were about a flat
+ * artwork panel headed for the compositor. The concept is a photograph again,
+ * shot on a plain background, so it has plain corners and a frame full of grey
+ * by design and those checks would now reject every image that came back.
  *
- * Nothing here is a substitute for looking at the panel. Two or three attempts
- * per usable one is the expected rate, so the point of a check is to spend the
- * retry automatically rather than to be certain.
+ * Type is the one that survived the change of render style, because it was
+ * never about the render style. No image model sets type legibly.
  *
  * No dependencies: this runs in a serverless function, and pulling an image
- * library in to read a few hundred pixels is not worth the cold start. PNG is
- * the only format decoded — it is what the image models return — and anything
- * else passes unchecked rather than failing.
+ * library in is not worth the cold start. PNG is the only format decoded — it
+ * is what the image models return — and anything else passes unchecked rather
+ * than failing.
  */
 
-export type PanelIssue = "margins" | "palette" | "aspect" | "text";
+export type PanelIssue = "text";
 export type PanelReport = {
   issues: PanelIssue[];
   /** Plain-language reason per issue, for the log and the retry prompt. */
@@ -29,22 +28,6 @@ export type PanelReport = {
 };
 
 const NONE: PanelReport = { issues: [], notes: [], size: null };
-
-/* Sampled per corner. Big enough to survive a stray pixel of noise, small
-   enough to still be the corner rather than the composition. */
-const CORNER = 24;
-
-/* How far a pixel may sit from the nearest requested colour and still count as
-   on-palette, as a squared distance in RGB. 72 levels: wide enough for the
-   tints and shades a flat panel is built from, narrow enough that a hue nobody
-   asked for lands outside it. */
-const TOLERANCE = 72 * 72;
-
-/* Below this share of sampled pixels near the palette, the model was not
-   listening. */
-const ON_PALETTE = 0.6;
-
-const SAMPLES = 200;
 
 /* Text detection.
  *
@@ -341,104 +324,26 @@ export function decodePng(buf: Buffer): Bitmap | null {
   return { width, height, rgba };
 }
 
-function hex(value: string): [number, number, number] | null {
-  const m = /^#?([0-9a-f]{6})$/i.exec(value.trim());
-  if (!m) return null;
-  const n = parseInt(m[1], 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
-/** Mean colour and alpha of a square patch, used on the four corners. */
-function patch(bm: Bitmap, x0: number, y0: number) {
-  let r = 0, g = 0, b = 0, a = 0, n = 0;
-  for (let y = y0; y < y0 + CORNER; y++) {
-    for (let x = x0; x < x0 + CORNER; x++) {
-      const i = (y * bm.width + x) * 4;
-      r += bm.rgba[i]; g += bm.rgba[i + 1]; b += bm.rgba[i + 2]; a += bm.rgba[i + 3];
-      n++;
-    }
-  }
-  return { r: r / n, g: g / n, b: b / n, a: a / n };
-}
-
 /**
- * Reads the panel and says what is wrong with it. An image it cannot decode
- * comes back clean — see the note on failing open at the top.
+ * Reads the image and says whether it carries lettering. An image it cannot
+ * decode comes back clean — see the note on failing open at the top.
  */
-export function checkPanel(image: { data: string; mediaType: string }, palette: string[]): PanelReport {
+export function checkPanel(image: { data: string; mediaType: string }): PanelReport {
   if (!/^image\/png$/i.test(image.mediaType)) return NONE;
 
   let bm: Bitmap | null = null;
   try {
     bm = decodePng(Buffer.from(image.data, "base64"));
   } catch (err) {
-    console.warn("check-panel: could not read the panel, letting it through", err);
+    console.warn("check-panel: could not read the image, letting it through", err);
     return NONE;
   }
   if (!bm) return NONE;
 
-  const issues: PanelIssue[] = [];
-  const notes: string[] = [];
-
-  // 1. Full bleed. A model told to fill the frame still likes to centre a
-  //    subject on white, and white corners become bare fabric after clipping.
-  const corners = [
-    patch(bm, 0, 0),
-    patch(bm, bm.width - CORNER, 0),
-    patch(bm, 0, bm.height - CORNER),
-    patch(bm, bm.width - CORNER, bm.height - CORNER),
-  ];
-  const blank = corners.filter((c) => c.a < 250 || (c.r > 242 && c.g > 242 && c.b > 242));
-  if (blank.length) {
-    issues.push("margins");
-    notes.push(
-      `${blank.length} of the four corners are blank or transparent, so the artwork is not full bleed.`,
-    );
-  }
-
-  // 2. Palette. Sampled on a fixed lattice rather than at random, so the same
-  //    panel always gets the same verdict.
-  const wanted = palette.map(hex).filter(Boolean) as [number, number, number][];
-  if (wanted.length) {
-    const step = Math.max(1, Math.floor(Math.sqrt((bm.width * bm.height) / SAMPLES)));
-    let near = 0, seen = 0;
-    for (let y = (step >> 1); y < bm.height; y += step) {
-      for (let x = (step >> 1); x < bm.width; x += step) {
-        const i = (y * bm.width + x) * 4;
-        if (bm.rgba[i + 3] < 128) continue;
-        seen++;
-        for (const [r, g, b] of wanted) {
-          const dr = bm.rgba[i] - r, dg = bm.rgba[i + 1] - g, db = bm.rgba[i + 2] - b;
-          if (dr * dr + dg * dg + db * db <= TOLERANCE) { near++; break; }
-        }
-      }
-    }
-    const share = seen ? near / seen : 1;
-    if (share < ON_PALETTE) {
-      issues.push("palette");
-      notes.push(
-        `Only ${Math.round(share * 100)}% of the panel is near the colors that were asked for.`,
-      );
-    }
-  }
-
-  // 3. Lettering. The panel carries no type at all: the crest, the name and the
-  //    number are a separate vector layer laid on after compositing.
   const type = findText(bm);
-  if (type.found) {
-    issues.push("text");
-    notes.push(type.note);
-  }
-
-  // 4. Square. The compositor draws the master across a square canvas, so a
-  //    panel of another shape has to be cropped and the two sleeves stop
-  //    matching across the seam. Worth saying; not worth refusing over.
-  if (bm.width !== bm.height) {
-    issues.push("aspect");
-    notes.push(
-      `The panel is ${bm.width}×${bm.height}, not square, and will be centre-cropped before it is used.`,
-    );
-  }
-
-  return { issues, notes, size: { width: bm.width, height: bm.height } };
+  return {
+    issues: type.found ? ["text"] : [],
+    notes: type.found ? [type.note] : [],
+    size: { width: bm.width, height: bm.height },
+  };
 }

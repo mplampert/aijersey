@@ -800,16 +800,14 @@ const CFG = {
     {id:'scene', name:'Illustrated'},
     {id:'bold',  name:'Graphic'},
   ],
-  // The four vibes offered in step 1.
-  // `brief` is the phrase sent to the model as the panel's subject, so the words
-  // the customer taps and the words we send stay together. They describe a
-  // treatment, never a garment: the garment is ours, and a brief that says
-  // "jersey" argues with every "no jersey" the function sends after it.
+  // The four vibes offered in step 1. `brief` is the phrase sent to the model
+  // as the design, so the words the customer taps and the words we send stay
+  // together.
   vibes: [
-    {id:'classic', name:'Classic', note:'Traditional',   brief:'A classic, traditional treatment: even horizontal bands and simple color blocking'},
-    {id:'modern',  name:'Modern',  note:'Clean lines',   brief:'A modern treatment: clean lines and simple, confident shapes'},
-    {id:'bold',    name:'Bold',    note:'High contrast', brief:'A bold, high-contrast treatment with strong graphic striping'},
-    {id:'retro',   name:'Retro',   note:'Throwback',     brief:'A retro throwback treatment with an old-school feel'},
+    {id:'classic', name:'Classic', note:'Traditional',   brief:'A classic, traditional team jersey'},
+    {id:'modern',  name:'Modern',  note:'Clean lines',   brief:'A modern jersey with clean lines and simple, confident shapes'},
+    {id:'bold',    name:'Bold',    note:'High contrast', brief:'A bold, high-contrast jersey with strong graphic striping'},
+    {id:'retro',   name:'Retro',   note:'Throwback',     brief:'A retro throwback jersey with an old-school feel'},
   ],
   // Whether the customer brings their own crest.
   crest: [
@@ -897,12 +895,8 @@ if('IntersectionObserver' in window){
   const sync=()=>{ jump.hidden = !heroGone || designerHere; };
   new IntersectionObserver(([e])=>{heroGone=!e.isIntersecting;sync();})
     .observe(document.querySelector('header'));
-  new IntersectionObserver(([e])=>{
-    designerHere=e.isIntersecting;
-    // Somebody looking at the designer is somebody who will need the garment.
-    if(designerHere) mockup();
-    sync();
-  }).observe($('#designer'));
+  new IntersectionObserver(([e])=>{designerHere=e.isIntersecting;sync();})
+    .observe($('#designer'));
 }
 
 /* ---------------- 1. design ---------------- */
@@ -972,85 +966,207 @@ function showCrest(){
   $('#crestName').hidden = S.crest!=='name';
 }
 
-/* Everything the flow collected, written out as the subject the model reads.
-   The colors travel in their own field, so they are not repeated here. Someone
-   who taps nothing but a color still produces a full sentence.
+/* Everything the flow collected, written out as the design the model reads. The
+   colors travel in their own field, and so does the collar, so neither is
+   repeated here. Someone who taps nothing but a color still produces a full
+   sentence.
 
-   What this asks for is background treatment: stripes, bands, texture, a scene.
-   Never a crest, and never the team name. Both of those are laid on after the
-   render, as their own layer, so the model is not asked for lettering it cannot
-   set legibly or for an emblem baked into the print the factory would then have
-   to separate back out. All the team name buys here is a calmer centre chest
-   for the crest to sit on. */
+   Never the team name, and never a crest. Both go on afterwards as their own
+   layer: no image model sets type legibly, and a crest the model invents is a
+   second one sitting under the customer's. Whether they have their own crest
+   travels as `ownCrest`, which is all the function needs to keep the chest
+   clear for it. */
 function buildBrief(){
   const vibe=CFG.vibes.find(v=>v.id===S.vibe);
   const extra=$('#prompt').value.trim();
-  const parts=[vibe?vibe.brief:'A clean, conventional treatment'];
-  const crested = S.crest==='logo' || (S.crest==='name' && $('#teamName').value.trim());
-  if(crested) parts.push('keeping the centre of the panel calm and uncluttered');
+  const parts=[vibe?vibe.brief:'A clean, conventional team jersey'];
   if(extra) parts.push(extra);
   return parts.join(', ')+'.';
 }
 
-/* ---------------- the mockup ---------------- */
-/* The model draws a flat artwork panel and nothing else: no garment, no folds,
- * no shadows, no emblem. The jersey the customer sees is a real 3D render, and
- * the panel is clipped through its four region masks with the render's own
- * shading laid back over the top. Same render, same code as the compositor at
- * /mockup/ — it is imported from there rather than copied, because two versions
- * of this drifting apart would show up as two different jerseys.
+/* ---------------- crest ---------------- */
+/* The customer's logo never goes to the model: it came back mirrored, redrawn,
+ * or swapped for an invention of the model's own. The chest is asked for clear
+ * and the real file is composited on here, untouched — same pixels, same
+ * orientation, same colors. The team name goes on the same way, as real type,
+ * because no image model sets type legibly and every word one draws has to be
+ * thrown away.
  *
- * Loaded on demand. It is five 1500px PNGs, about 2MB, and somebody who never
- * opens the designer should never pay for them.
+ * The concept is a front view and a back view on hangers with a pair of socks
+ * alongside, and only the front is crested: our jerseys carry NAME and 00 on
+ * the back, not a second crest.
+ *
+ * Where the front view sits is not fixed. The model reframes on every
+ * generation — across the older two-view concepts its torso axis landed
+ * anywhere from 0.252 to 0.279 of the image width, and the garment's height in
+ * the frame swung by a third when the image function fell back from a landscape
+ * frame to a square one. A fixed coordinate is wrong on almost every one, so
+ * the garment is found in the pixels instead.
+ *
+ * WORTH RE-MEASURING. Every number in CREST was taken from concepts that had no
+ * hangers and no socks in the frame. The hanger puts a hook and a bar above the
+ * shoulders, which is why `top` is now the first row carrying real width rather
+ * than the first row carrying any; the socks put a third object in the frame
+ * that the band scan has to not mistake for a jersey. Both are handled below,
+ * neither is verified against real output, and the fallback medians are
+ * certainly stale. Check them against the first real batch.
  */
-let mockupReady = null;
-function mockup(){
-  if(!mockupReady){
-    mockupReady = import('/mockup/render.js')
-      .then(async m => ({m, garment: await m.loadGarment()}));
-    mockupReady.catch(err => {
-      console.error('the garment could not be loaded', err);
-      mockupReady = null;      // let the next concept try again
-    });
-  }
-  return mockupReady;
-}
+const CREST = {
+  detect:384,  // width the search runs at; it returns fractions, so size is free
+  step:6,      // largest per-channel jump the background fill may cross
+  cap:58,      // ...and how far it may drift from the border color in total
+  wide:0.45,   // a row counts as the garment at this share of the widest row,
+               // which is what steps over a hanger hook and its bar
+  chest:0.40,  // crest center, as a fraction of the way from shoulder to hem
+  size:0.32,   // longest side of the logo, as a fraction of garment height
+
+  /* Used only when the search comes back empty. Measured across the concepts in
+     public/hero — right on average and wrong on any particular one, which is
+     the whole reason for the search. */
+  x:0.263,     // center of the front view, as a fraction of image width
+  y:0.425,     // chest height, as a fraction of image height
+  box:0.18,    // longest side of the logo, as a fraction of image width
+};
 
 const loadImg = src => new Promise((ok,no)=>{
   const i=new Image();i.onload=()=>ok(i);i.onerror=()=>no(new Error('image failed'));i.src=src;
 });
+
+/* Locates the front jersey and returns where its crest goes, in the same
+   fractions the fallback constants use — or null if what it found does not
+   look like a jersey, which hands the caller those constants instead.
+
+   The concepts are shot on a plain studio background, so the background is
+   found rather than the garment: a flood fill runs inward from the border, and
+   a neighbouring pixel joins the background only if it is a small step from the
+   pixel it was reached from. That follows the sweep's own gradient and stops at
+   the garment's edge. Thresholding on color against the background cannot do
+   the same job — a white jersey sits two levels off a light grey sweep, while
+   the edge between them is a jump of thirty. */
+function findJersey(jersey){
+  const W=jersey.naturalWidth||1, H=jersey.naturalHeight||1;
+  const k=Math.min(1,CREST.detect/W);
+  const w=Math.max(1,Math.round(W*k)), h=Math.max(1,Math.round(H*k));
+  const cv=document.createElement('canvas');
+  cv.width=w; cv.height=h;
+  const c=cv.getContext('2d',{willReadFrequently:true});
+  c.drawImage(jersey,0,0,w,h);
+  const px=c.getImageData(0,0,w,h).data;
+
+  // Seed color: the median of the border, so one dark corner cannot move it.
+  const edge=[];
+  for(let x=0;x<w;x++){edge.push(x*4);edge.push(((h-1)*w+x)*4);}
+  for(let y=0;y<h;y++){edge.push((y*w)*4);edge.push((y*w+w-1)*4);}
+  const mid=ch=>{const v=edge.map(i=>px[i+ch]).sort((a,b)=>a-b);return v[v.length>>1];};
+  const sr=mid(0), sg=mid(1), sb=mid(2);
+  const off=(i,r,g,b)=>Math.max(Math.abs(px[i]-r),Math.abs(px[i+1]-g),Math.abs(px[i+2]-b));
+
+  const bg=new Uint8Array(w*h), queue=new Int32Array(w*h);
+  let tail=0;
+  const seed=(x,y)=>{
+    const p=y*w+x;
+    if(bg[p]||off(p*4,sr,sg,sb)>CREST.cap) return;
+    bg[p]=1; queue[tail++]=p;
+  };
+  const grow=(x,y,r,g,b)=>{
+    const p=y*w+x, i=p*4;
+    if(bg[p]||off(i,r,g,b)>CREST.step||off(i,sr,sg,sb)>CREST.cap) return;
+    bg[p]=1; queue[tail++]=p;
+  };
+  for(let x=0;x<w;x++){seed(x,0);seed(x,h-1);}
+  for(let y=0;y<h;y++){seed(0,y);seed(w-1,y);}
+  for(let head=0;head<tail;head++){
+    const p=queue[head], x=p%w, y=(p-x)/w, i=p*4;
+    const r=px[i], g=px[i+1], b=px[i+2];
+    if(x>0) grow(x-1,y,r,g,b);
+    if(x<w-1) grow(x+1,y,r,g,b);
+    if(y>0) grow(x,y-1,r,g,b);
+    if(y<h-1) grow(x,y+1,r,g,b);
+  }
+
+  /* Row occupancy, then shoulder and hem. A hanger hangs above the shoulders on
+     a hook a few pixels wide and a bar a fraction of the garment's width, so a
+     row only counts once it carries a real share of the widest row in the
+     frame. Reading the first row with anything in it at all puts the shoulder
+     line up on the hook and drags the whole chest measurement down with it. */
+  const fill=new Int32Array(h);
+  let widest=0;
+  for(let y=0;y<h;y++){
+    let n=0;
+    for(let x=0;x<w;x++) if(!bg[y*w+x]) n++;
+    fill[y]=n;
+    if(n>widest) widest=n;
+  }
+  if(!widest) return null;
+  let top=-1, hem=-1;
+  for(let y=0;y<h;y++){
+    if(fill[y] > widest*CREST.wide){ if(top<0) top=y; hem=y; }
+  }
+  if(top<0||hem-top<h*0.15) return null;
+  const span=hem-top;
+
+  /* The torso axis is read from a band just below the collar, where the two
+     views have never touched. That band is not always readable, though, so it
+     walks down the garment until one of them gives up a front view. */
+  let x0=-1, x1=-1;
+  for(const at of [0.04,0.12,0.20,0.30]){
+    const on=new Uint8Array(w);
+    const b0=top+Math.max(1,Math.round(span*at));
+    const b1=Math.min(h,top+Math.max(2,Math.round(span*(at+0.10))));
+    for(let y=b0;y<b1;y++) for(let x=0;x<w;x++) if(!bg[y*w+x]) on[x]=1;
+    /* A run is the front view if it is wide enough to be a garment, narrow
+       enough to be only one of them, and sits in the left half — the front is
+       always the left of the two. Anything else means this band has not found
+       what we came for: a leaked front collar can leave the back nameplate as
+       the only thing standing up here, a band low enough for the sleeves to
+       touch reads both jerseys as a single run, and a sock laid alongside is
+       far too narrow to pass. Walk on and try lower. */
+    let s=-1;
+    for(let x=0;x<=w && x0<0;x++){
+      const set = x<w && on[x];
+      if(set && s<0) s=x;
+      else if(!set && s>=0){
+        const a=s, b=x-1, run=b-a;
+        if(run > w*0.15 && run < w*0.55 && (a+b)/2 < w*0.5){ x0=a; x1=b; }
+        s=-1;
+      }
+    }
+    if(x0>=0) break;
+  }
+  if(x0<0) return null;
+  const cx=(x0+x1)/2/w;
+  /* A sanity bound, not the answer: a result far outside the left half means
+     the search latched onto something that is not the front jersey — a sock, a
+     hanger, a shadow — and the fallback is better than that. */
+  if(cx<0.15||cx>0.45) return null;
+
+  /* Size comes off the garment's height, not the shoulder run: on a pale jersey
+     the fill leaks across the shoulders and leaves only the collar standing,
+     which still centers correctly but measures far too narrow. Top and hem
+     survive that, and a jersey's width tracks its height closely enough. */
+  return {
+    x:cx,
+    y:(top+span*CREST.chest)/h,
+    box:CREST.size*(span/h)*(H/W),
+  };
+}
 
 const luma = hex => {
   const n = parseInt(hex.slice(1),16);
   return 0.2126*((n>>16)&255) + 0.7152*((n>>8)&255) + 0.0722*(n&255);
 };
 
-/* The collar is the one part of the garment the artwork does not cover, so it
-   takes the darkest color on the card: a dark rib is what reads as a rib. */
-function collarColor(){
-  if(!S.colors.length) return '#141619';
-  return S.colors.reduce((a,b)=>luma(a.hex)<=luma(b.hex)?a:b).hex;
-}
-
-/* The crest is its own layer, laid on after the render — never drawn into the
- * artwork. Asking the model for one gave back a centred medallion baked into
- * the print, which is neither what a crest is nor something the factory can
- * separate out again.
- *
- * An uploaded logo goes on untouched: same pixels, same orientation, same
- * colors. Without one, the team name is set as a wordmark instead. Where it
- * goes is no longer searched for — the garment is ours and the chest is a
- * measured constant.
- */
-async function drawCrest(c, chest){
-  const box = chest.size;
+/* The crest layer: the uploaded logo, or the team name set as a wordmark. Drawn
+   at whatever the search found, sized against the garment it found. */
+async function drawCrest(c, spot, W, H){
+  const box = spot.box*W;
   if(S.logo){
     const logo = await loadImg(S.logo.data);
     const lw = logo.naturalWidth||1, lh = logo.naturalHeight||1;
     // Fit inside the box, longest side first, so a wide or tall logo keeps its
     // proportions instead of being stretched.
     const k = Math.min(box/lw, box/lh);
-    c.drawImage(logo, chest.x-lw*k/2, chest.y-lh*k/2, lw*k, lh*k);
+    c.drawImage(logo, spot.x*W-lw*k/2, spot.y*H-lh*k/2, lw*k, lh*k);
     return;
   }
 
@@ -1058,10 +1174,11 @@ async function drawCrest(c, chest){
   if(S.crest!=='name' || !team) return;
 
   /* Read what the wordmark is about to sit on and take the side of it that
-     contrasts, outlined in the other. A panel can be any color anywhere, and a
-     name nobody can read is worse than no name. */
+     contrasts, outlined in the other. The chest can be any color, and a name
+     nobody can read is worse than no name. */
   const w = box*1.5, h = box*0.42;
-  const patch = c.getImageData(chest.x-w/2, chest.y-h/2, Math.round(w), Math.round(h)).data;
+  const x = Math.max(0, Math.round(spot.x*W-w/2)), y = Math.max(0, Math.round(spot.y*H-h/2));
+  const patch = c.getImageData(x, y, Math.min(Math.round(w), W-x), Math.min(Math.round(h), H-y)).data;
   let sum = 0;
   for(let i=0;i<patch.length;i+=4) sum += 0.2126*patch[i] + 0.7152*patch[i+1] + 0.0722*patch[i+2];
   const dark = sum/(patch.length/4) < 140;
@@ -1074,41 +1191,39 @@ async function drawCrest(c, chest){
   const face = size => `italic 900 ${size}px "Arial Narrow", "Helvetica Neue", Arial, sans-serif`;
   c.font = face(px);
   const wide = c.measureText(text).width;
-  if(wide > w){ px = Math.max(24, px*w/wide); c.font = face(px); }
+  if(wide > w){ px = Math.max(18, px*w/wide); c.font = face(px); }
   c.lineJoin = 'round';
   c.lineWidth = px/9;
   c.strokeStyle = dark ? '#101317' : '#f4f6f8';
-  c.strokeText(text, chest.x, chest.y);
+  c.strokeText(text, spot.x*W, spot.y*H);
   c.fillStyle = dark ? '#f4f6f8' : '#101317';
-  c.fillText(text, chest.x, chest.y);
+  c.fillText(text, spot.x*W, spot.y*H);
   c.restore();
 }
 
-/* Panel in, finished jersey out. A step that fails costs its own step and
-   nothing else: a flat panel on screen beats a lost design, and a missing crest
-   beats a lost jersey. */
-async function dressJersey(panel){
+/* Returns the concept with the crest on it, or the concept untouched if there
+   is nothing to put on it or the compositing fails — a missing crest beats a
+   lost design. */
+async function applyCrest(src){
+  const wantsCrest = S.logo || (S.crest==='name' && $('#teamName').value.trim());
+  if(!wantsCrest) return src;
   try{
-    const {m, garment} = await mockup();
-    const spec = m.newSpec();
-    spec.art = await m.loadImage(panel);
-    spec.regions.collar.color = collarColor();
-    garment.render(spec);
-
-    /* Copied off the garment's own canvas, which the next render overwrites. */
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = m.CANVAS;
-    const c = cv.getContext('2d',{willReadFrequently:true});
-    c.drawImage(garment.canvas,0,0);
-
-    // A crest that fails costs the crest, never the jersey. Encoding a 1500px
-    // canvas is not cheap, so it happens once, after both have had their go.
-    try{ await drawCrest(c, m.CHEST); }
-    catch(err){ console.error('crest could not be composited',err); }
+    const jersey = await loadImg(src);
+    const cv=document.createElement('canvas');
+    cv.width=jersey.naturalWidth||1024;
+    cv.height=jersey.naturalHeight||1024;
+    const c=cv.getContext('2d',{willReadFrequently:true});
+    c.drawImage(jersey,0,0,cv.width,cv.height);
+    /* A search that throws — a tainted canvas, an image that will not draw —
+       must cost the placement, never the crest. */
+    let spot=CREST;
+    try{ spot=findJersey(jersey)||CREST; }
+    catch(err){ console.warn('crest: could not find the jersey, placing by fallback',err); }
+    await drawCrest(c, spot, cv.width, cv.height);
     return cv.toDataURL('image/png');
   }catch(err){
-    console.error('the panel could not be put on the garment',err);
-    return panel;   // a flat panel on screen beats a lost design
+    console.error('crest could not be composited',err);
+    return src;
   }
 }
 
@@ -1189,7 +1304,8 @@ async function askConcept(prompt,baseImage,variant){
   const res=await fetch(CFG.endpoint,{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({prompt,style:S.style,variant:variant||null,colors:S.colors,
-      teamName:$('#teamName').value.trim()||null,baseImage:baseImage||null})
+      ownCrest:!!S.logo,teamName:$('#teamName').value.trim()||null,
+      baseImage:baseImage||null})
   });
   if(!res.ok){
     const msg=await res.json().then(d=>d&&d.error,()=>null);
@@ -1414,7 +1530,7 @@ $('#gen').onclick=async()=>{
   let landed=0; const failed=[];
   await Promise.all(CFG.variants.map(v=>
     askConcept(prompt,null,v.id).then(
-      async image=>{ addVersion(await dressJersey(image),v.name,landed===0,image); landed++; },
+      async image=>{ addVersion(await applyCrest(image),v.name,landed===0,image); landed++; },
       err=>{ failed.push(err); }
     )
   ));
@@ -1490,7 +1606,7 @@ $('#refineBtn').onclick=async()=>{
   showBusy('Making that change');
   try{
     const drawn=await askConcept(prompt,from);
-    addVersion(await dressJersey(drawn),'Refinement',true,drawn);
+    addVersion(await applyCrest(drawn),'Refinement',true,drawn);
     $('#refinePrompt').value='';
   }catch(err){
     showError(err);

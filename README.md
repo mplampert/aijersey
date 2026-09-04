@@ -25,44 +25,43 @@ has no backend at all.
 
 **`/` — the order page.** The customer flow: design, colours, roster, order.
 
-**`/mockup/` — the mockup compositor.** Takes a flat artwork panel and renders
-it onto a real jersey: a fixed 3D render in `public/mockup/front/`, clipped
-through four region masks with the render's own shading laid back over the top.
-No build, no dependencies, no backend. `public/mockup/front/README.md` covers
-the assets.
+**`/mockup/` — the mockup compositor. Parked, and not in the customer path.**
+It takes a flat artwork panel and renders it onto a fixed 3D jersey: the render
+in `public/mockup/front/`, clipped through four region masks with its own
+shading laid back over the top. It works, it is tested, and nothing calls it —
+`mockup/render.js` and the five assets sit here unused.
 
-The render itself is `mockup/render.js`, and both halves import it. The order
-page shows a customer the same jersey the compositor does, off the same code —
-two copies of this would drift, and drift would show up as two different
-garments.
+It was built to take the garment away from the image model, which returns a
+different one every time. What that bought was a garment that never changed
+shape. What it cost was that the render is one jersey on one silhouette, and a
+flat panel through it reads as a drawing rather than as a photograph of
+something you can buy. So the generator draws the garment again, and the
+compositor stays in the repo for when a second look is wanted.
 
-That inverts what the generator is for. It used to be asked for "a hockey
-jersey" and returned a different garment every time; now the garment is fixed
-and it supplies artwork only. `/api/generate-concept` produces flat panels to
-match — square, full bleed, no garment, no folds, no shadows, no type.
+`/api/generate-concept` now returns the finished sales image: the jersey front
+and back on wooden hangers with a matching pair of leg socks laid alongside,
+real fabric drape, soft studio light, neutral background.
 
 ## What's wired
 
-- **Design** — prompt + idea chips + logo upload. Posts to `/api/generate-concept`,
-  and renders the panel that comes back onto the garment.
-- **Crest** — its own layer, laid on after the render at a measured chest
-  position: the uploaded logo untouched, or the team name set as a wordmark,
-  outlined against whatever it lands on. Never drawn into the artwork.
+- **Design** — prompt + idea chips + logo upload. Posts to `/api/generate-concept`
+  and shows what comes back.
+- **Crest** — its own layer, composited onto the returned photograph: the
+  uploaded logo untouched, or the team name set as a wordmark, outlined against
+  whatever it lands on. Never drawn by the model. Where it goes is found in the
+  pixels, since the model reframes on every generation.
 - **Colours** — factory colour card, multi-select. Passed into the prompt as the
   panel's palette, capped at five: past that a model treats the list as a
   suggestion.
-- **Artwork checks** — every generated panel is read before anyone sees it. A
-  real-world mark or any lettering is a hard reject: one redraw, and if it comes
-  back carrying either the take is dropped rather than shown. Blank margins and
-  a palette the model ignored buy a redraw and ship with a warning.
-  `api/check-panel.ts` does the pixel side with no dependencies; the lettering
-  verdict comes from the vision call `api/check-image.ts` was already making.
+- **Image checks** — every concept is read before anyone sees it. A real-world
+  mark or any lettering is a hard reject: one redraw, and if it comes back
+  carrying either, the take is dropped rather than shown. `api/check-panel.ts`
+  does the pixel side with no dependencies; the lettering verdict comes from the
+  vision call `api/check-image.ts` was already making.
 - **Names never reach the model.** The team name travels in its own field, is
   never interpolated into a prompt, and is scrubbed back out of the brief if a
   customer typed it there. The roster is not sent at all. No image model sets
   type legibly, and every one it draws has to be thrown away.
-- **Compositor** — unified or per-region artwork, shading contrast, overlay or
-  soft-light, and a 1500 × 1500 transparent PNG export.
 - **Roster** — type, paste, or CSV. Parses `12 Sullivan L` and `31 Tremblay L G`.
   Validates duplicate numbers, missing number/name/size, and the minimum.
 - **Order** — live total, kit add-ons priced per player, account fields.
@@ -73,12 +72,15 @@ match — square, full bleed, no garment, no folds, no shadows, no type.
   name set in bold italic, fitted to the chest and outlined for contrast. It is
   legible on any artwork and it is not a crest. Real ones are drawn, arced,
   layered — this is one line of canvas text standing in for that.
-- **A shared design refines from its mockup.** Opening a saved design by code
-  puts the finished jersey in both `src` and `raw`, so refining it sends the
-  model a picture of a garment — the one thing the pipeline exists to stop. The
-  panel needs saving alongside the mockup for that path to work.
-- **Only the front.** `Base.png` is a front view. The back needs its own asset
-  set, its own masks and its own measured constants.
+- **The crest constants want re-measuring.** `CREST` in `index.html` was
+  measured on concepts that had no hangers and no socks in the frame. The search
+  handles both — it steps over a hanger hook and a sock is too narrow to mistake
+  for a jersey — but `chest`, `size` and the fallback medians are all from the
+  old framing. Check them against the first real batch.
+- **A shared design refines from its crested copy.** Opening a saved design by
+  code puts the same image in both `src` and `raw`, so a refinement sends the
+  model a concept with our crest already on it and it may redraw it. Saving the
+  uncrested image alongside would fix it.
 - **Checkout.** Button logs the order payload to the console. Point it at
   Stripe Checkout or a Shopify draft order.
 - **Accounts.** Fields collect, nothing persists. Needs a backend.

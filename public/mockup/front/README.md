@@ -4,6 +4,10 @@ The fixed garment the mockup compositor at `/mockup/` renders artwork onto.
 Five files, all 1500 × 1500 PNG with alpha, already registered against each
 other.
 
+**Nothing in the customer path uses these.** The order page went back to showing
+what the image model returns, so the compositor and these assets are parked —
+working, tested, and called by nothing but `/mockup/` itself.
+
     Base.png                neutral grey render of the garment — the shading pass
     mask-body-front.png     torso
     mask-shoulders.png      shoulder yoke
