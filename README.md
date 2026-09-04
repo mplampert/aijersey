@@ -136,11 +136,13 @@ Tune `spacing`, `rateRetries` and `waitCap` in `CFG`.
 verified in Resend or every send is refused. Two things trigger it, both of them
 a customer typing their address and pressing a button. Nothing sends unprompted.
 
-**Saving.** "Don't lose this design" writes Email, Team and Phone, then emails
-one link to that customer's gallery — not one link per design, because a gallery
-collects everything they ever save and a mail full of individual links goes
-stale the moment they make another one. The concept they saved is attached, so
-the mail still shows something to somebody who never clicks through.
+**Saving.** "Don't lose this design" asks for a name and an address, and takes a
+phone number if it is offered. It writes Email, Team and Phone to the design and
+the whole lot to the CRM, then emails one link to that customer's gallery — not
+one link per design, because a gallery collects everything they ever save and a
+mail full of individual links goes stale the moment they make another one. The
+concept they saved is attached, so the mail still shows something to somebody
+who never clicks through.
 
 **Lookup.** "Find my designs", next to the design code, takes either. A
 four-character code opens that design on the spot, no email involved. An address
@@ -193,11 +195,18 @@ updates the contact they already have; a create would split one person's history
 across two rows. The address is always sent, and the phone number never stands in
 for it.
 
-The team name goes in as both the contact name and the company — the team is who
-this business is selling to, and GHL lists by one and filters by the other. The
-phone number goes in E.164, as the save already normalised it. Both are sent only
-when that save carried them; a save that changed nothing but the address leaves
-what is already on the contact alone.
+The customer's own name goes in as `firstName` and `lastName` — first word
+first, the rest last — and the team goes in as `companyName`. Not the same
+field: the team used to stand in for both, which put "Riverside Rockets" where a
+person's name goes and left every contact addressed as a hockey club. A one-word
+name is a first name with no last. The phone goes in E.164, as the save already
+normalised it. Each is sent only when that save carried it, so a save that
+changed nothing but the address leaves what is already on the contact alone.
+
+The name is the one thing here with no Airtable column behind it — it exists to
+name the contact, and the Designs table has nowhere to put it. So it reaches GHL
+or it is not kept at all. Add a column to the base and it can be written like
+the phone and the team are.
 
 **Three custom fields have to exist on the contact:** `design_code`,
 `design_gallery` and `design_image` — the four-character code, the gallery link,

@@ -633,6 +633,8 @@ footer{
           <p class="note">There&rsquo;s no account to log back into. Leave your address and we&rsquo;ll
             email you a link to your own gallery &mdash; this design and everything else you save.</p>
           <input type="email" id="saveEmail" placeholder="you@yourteam.com" autocomplete="email">
+          <label class="fld" for="saveName">Your name</label>
+          <input type="text" id="saveName" placeholder="Alex Moreau" autocomplete="name">
           <label class="fld" for="savePhone">Phone <span class="opt">Optional</span></label>
           <p class="note">So we can text you when your proof is ready.</p>
           <input type="tel" inputmode="numeric" id="savePhone"
@@ -1487,6 +1489,11 @@ $('#phone').oninput=()=>{phoneEdited=true;pushOrder();};
 $('#savePhone').oninput=()=>{
   if(!phoneEdited) $('#phone').value=$('#savePhone').value;
 };
+let contactEdited=false;
+$('#contact').oninput=()=>{contactEdited=true;};
+$('#saveName').oninput=()=>{
+  if(!contactEdited) $('#contact').value=$('#saveName').value;
+};
 
 /* ---------------- sharing ---------------- */
 /* A design code in the address bar opens that design straight into the canvas,
@@ -1817,6 +1824,15 @@ $('#saveBtn').onclick=async()=>{
   if(!v)return;
   msg.hidden=true;
   if(!email){$('#saveEmail').focus();return;}
+  /* Asked for, not optional: this is the name on the customer record, and a
+     lead with an address and no name is one somebody has to write "?" next to. */
+  const name=$('#saveName').value.trim();
+  if(!name){
+    msg.className='saved bad';
+    msg.textContent='Pop your name in as well \u2014 we\u2019d rather not open with \u201cHi there\u201d.';
+    msg.hidden=false;$('#saveName').focus();return;
+  }
+
   // Optional, so an empty box is fine — but a filled one has to be a real
   // number, said here rather than silently dropped on the way to Airtable.
   const typed=$('#savePhone').value.trim();
@@ -1840,7 +1856,7 @@ $('#saveBtn').onclick=async()=>{
     }
     if(!v.recordId&&!v.code) throw new Error('This design couldn\'t be filed, so there\'s nothing to attach your address to. The console has the reason.');
     const team=$('#teamName').value.trim();
-    const payload={email};
+    const payload={email,name};
     if(v.recordId) payload.recordId=v.recordId;
     if(v.code) payload.code=v.code;
     if(phone) payload.phone=phone;

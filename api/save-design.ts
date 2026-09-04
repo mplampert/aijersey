@@ -102,6 +102,9 @@ type Body = {
   recordId?: string;
   code?: string;
   email?: string;
+  /* The person, as opposed to the team. Goes to the CRM as their first and
+     last name and nowhere else — the Designs table has no column for it. */
+  name?: string;
   session?: string;
   prompt?: string;
   style?: string | string[];
@@ -577,8 +580,13 @@ async function updateRecord(
   fields: Record<string, unknown>,
   /* Set only when the customer has just handed over an address, which is the
      one thing that sends mail. Everything else that patches this row — colours,
-     kit, roster — passes nothing here and sends nothing. */
-  mail?: { email: string; origin: string | null },
+     kit, roster — passes nothing here and sends nothing.
+
+     The name rides here rather than in `fields` beside the phone and the team,
+     because those two are Airtable columns and this is not one: it exists to
+     name the contact in the CRM, and there is nowhere on the Designs table to
+     put it. Add a column and it can be written like the rest. */
+  mail?: { email: string; name: string | null; origin: string | null },
 ): Promise<Response> {
   const notReady = unconfigured([
     "AIRTABLE_TOKEN",
@@ -706,8 +714,10 @@ async function updateRecord(
          customer must not lose their email — over a CRM that is down. */
       await upsertContact({
         email: mail.email,
-        // Whatever this save carried. A save that only changed the address
-        // sends neither, and the contact keeps the ones already on it.
+        // Whatever this save carried, and nothing it didn't: a save that
+        // changed only the address sends none of these, and the contact keeps
+        // the values already on it.
+        name: mail.name,
         phone: (fields[FIELD.phone] as string | undefined) ?? null,
         team: (fields[FIELD.team] as string | undefined) ?? null,
         code: shown?.code ?? null,
@@ -837,7 +847,13 @@ export async function POST(request: Request): Promise<Response> {
     /* Mail only when this save is the one carrying the address. A palette or a
        roster arriving later patches the same row and must not re-send. */
     const sending = body.email !== undefined && typeof fields[FIELD.email] === "string"
-      ? { email: fields[FIELD.email] as string, origin: originOf(request) }
+      ? {
+          email: fields[FIELD.email] as string,
+          // Trimmed and capped, never refused: a save must not fail over the
+          // shape of somebody's name, and an empty one is a contact without it.
+          name: (body.name || "").trim().slice(0, 100) || null,
+          origin: originOf(request),
+        }
       : undefined;
     return updateRecord({ recordId: body.recordId, code: code || undefined }, fields, sending);
   }

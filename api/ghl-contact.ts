@@ -48,7 +48,9 @@ export type Lead = {
   email: string;
   /** E.164, as save-design normalises it. Absent when they left the box empty. */
   phone?: string | null;
-  /** Becomes both the contact name and the company — the team is who they are. */
+  /** The person, as they typed it. Split into first and last — see splitName. */
+  name?: string | null;
+  /** The team, which is the company. Never the contact's name: see splitName. */
   team?: string | null;
   /** The design they just saved. */
   code?: string | null;
@@ -60,6 +62,27 @@ export type Lead = {
      save-design, which is what resolves it. */
   image?: string | null;
 };
+
+/**
+ * A typed name, as GHL wants it: a first and a last.
+ *
+ * The team used to stand in for both the name and the company, which put
+ * "Riverside Rockets" where a person's name goes and left every contact
+ * addressed as a hockey club. The team is the company and only the company;
+ * this is the person.
+ *
+ * First word first, the rest last, which is right for "Alex Moreau" and for
+ * "Alex van der Berg", and wrong for the naming orders that don't work that way
+ * — but a wrong split still shows the whole name on the contact, where no split
+ * at all showed none of it. One word is a first name with no last, not a
+ * surname on its own.
+ */
+function splitName(value: string | null | undefined): { firstName?: string; lastName?: string } {
+  const parts = (value ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return {};
+  const [first, ...rest] = parts;
+  return rest.length ? { firstName: first, lastName: rest.join(" ") } : { firstName: first };
+}
 
 export type Upserted =
   | { ok: true; id: string | null; tagged: boolean }
@@ -260,9 +283,10 @@ export async function upsertContact(lead: Lead): Promise<Upserted> {
     const body: Record<string, unknown> = {
       locationId: process.env.GHL_LOCATION_ID,
       email: lead.email,
-      // The team is the customer, as far as this business is concerned. Sent
-      // as both, because GHL lists contacts by name and filters them by company.
-      ...(team ? { name: team, companyName: team } : {}),
+      // The person goes in the name; the team goes in the company. Each only
+      // when this save carried it, so neither blanks what is already there.
+      ...splitName(lead.name),
+      ...(team ? { companyName: team } : {}),
       ...(lead.phone ? { phone: lead.phone } : {}),
       customFields: await customFields(lead),
     };
