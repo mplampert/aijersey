@@ -79,7 +79,8 @@ const NEGATIVE = [
   "no jersey", "no shirt", "no garment", "no clothing", "no fabric",
   "no folds", "no wrinkles", "no shadows", "no highlights", "no lighting",
   "no 3d render", "no mockup", "no hanger", "no mannequin", "no person",
-  "no text", "no letters", "no words", "no numbers", "no logo",
+  "no text", "no letters", "no words", "no lettering", "no typography",
+  "no script", "no numbers", "no logo",
   "no emblem", "no badge", "no medallion", "no shield", "no roundel",
   "no centered logo mark", "no crest", "no monogram", "no wordmark",
   "no central motif", "no circular device", "no coat of arms",
@@ -117,6 +118,30 @@ const VARIANTS: Record<string, string> = {
   bold:
     "Make this one graphic: large-scale shapes, hard-edged color blocking, oversized forms running off every edge. Poster-like and high contrast.",
 };
+
+/* The team name, the player names and the numbers never reach the image prompt.
+ * They drive the vector crest and nameplate layers, which are laid on after
+ * compositing, and an image model handed a name draws it — eleven panels in a
+ * row came back with it on them, garbled every time, because no image model
+ * sets type legibly.
+ *
+ * The page does not put the name in the brief any more, but the brief is a free
+ * text box and a customer who types their own team name into it is doing
+ * nothing wrong. So the name travels in its own field, is never interpolated
+ * anywhere, and is scrubbed back out of the theme if it turns up there.
+ *
+ * Digits are left alone. "1970s" and "three stripes" are legitimate briefs, the
+ * negative list already refuses numerals, and player numbers only exist on the
+ * roster, which this endpoint is never sent. */
+export function scrub(theme: string, names: string[]): string {
+  let out = theme;
+  for (const name of names) {
+    const word = name.trim();
+    if (word.length < 3) continue;
+    out = out.replace(new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), " ");
+  }
+  return out.replace(/\s{2,}/g, " ").replace(/^[\s,.;:-]+|[\s,.;:-]+$/g, "").trim();
+}
 
 /* The three collar ids the order page sends in `style`. They describe the
    garment, which no longer comes from here, so they must not reach the prompt —
@@ -199,44 +224,90 @@ async function twice<T>(
   return null;
 }
 
+/** A panel to show, a reason not to show one, or nothing that came back at all. */
+type Produced =
+  | { ok: true; made: Made; warnings: string[] }
+  | { ok: false; dropped: string }
+  | null;
+
+const FIX_MARKS =
+  "A previous attempt showed %s. Do not include %s, or any other real-world league, team, brand or manufacturer mark, anywhere in the artwork.";
+const FIX_TEXT =
+  "A previous attempt had lettering on it (%s). This artwork must contain no letters, words, numbers or characters of any kind, in any language or script, however stylised or decorative. The team name is added afterwards as separate type and must never be drawn into the artwork.";
+
 /**
- * Draws, then has the image checked for real-world marks. Prompting alone does
- * not stop image models reaching for an NHL shield or a team crest — they are
- * trained on real hockey imagery — so a positive verdict buys one redraw that
- * names what was seen. If the redraw is dirty too the variant is dropped:
- * better one option short than artwork we cannot sell.
+ * Draws, checks, and draws once more if the check came back dirty.
  *
- * Every rejection is logged so the rate and the repeat offenders are visible.
+ * Two attempts and no more: two or three tries per usable panel is the expected
+ * rate and the customer is waiting. Whatever the second attempt returns is what
+ * they get — unless it is still carrying a mark or lettering, in which case they
+ * get nothing rather than that. A panel with a garbled word printed into it is
+ * not a design we can sell, and showing it while promising to fix it later is
+ * how it ends up on a jersey.
  */
-async function drawClean(
+async function produce(
   what: string,
+  palette: string[],
   make: (extra: string) => Promise<Made | null>,
-): Promise<Made | null | "dropped"> {
-  const first = await make("");
-  if (!first) return null;
+): Promise<Produced> {
+  let last: Produced = null;
 
-  const verdict = await checkImage({ data: first.base64, mediaType: first.mediaType });
-  if (!verdict.found) return first;
+  for (let attempt = 1, extra = ""; attempt <= 2; attempt++) {
+    const made = await make(extra);
+    if (!made) return last ?? null;
 
-  const seen = verdict.marks.join(", ") || "a real-world mark";
-  console.warn("image-check: rejected, redrawing", { what, marks: verdict.marks });
+    const [verdict, panel] = await Promise.all([
+      checkImage({ data: made.base64, mediaType: made.mediaType || "image/png" }),
+      Promise.resolve(checkPanel({ data: made.base64, mediaType: made.mediaType || "image/png" }, palette)),
+    ]);
 
-  const second = await make(
-    `A previous attempt showed ${seen}. Do not include ${seen}, or any other real-world league, team, brand or manufacturer mark, anywhere in the artwork.`,
-  );
-  if (!second) return null;
+    /* The model read it, so its answer on lettering stands. Only when the call
+       failed does the shape detector decide alone. */
+    const lettering = verdict.ok ? verdict.lettering : panel.issues.includes("text");
+    const said = verdict.letters.join("; ") || panel.notes.find(Boolean) || "garbled type";
 
-  const after = await checkImage({ data: second.base64, mediaType: second.mediaType });
-  if (!after.found) return second;
+    const fixes: string[] = [];
+    if (verdict.found) fixes.push(FIX_MARKS.replaceAll("%s", verdict.marks.join(", ") || "a real-world mark"));
+    if (lettering) fixes.push(FIX_TEXT.replace("%s", said));
+    for (const issue of panel.issues) {
+      const clause = FIXES[issue];
+      if (clause) fixes.push(clause);
+    }
 
-  console.warn("image-check: dropped after redraw", { what, marks: after.marks });
-  return "dropped";
+    const warnings = panel.notes.filter((_, i) => panel.issues[i] !== "text");
+    last = { ok: true, made, warnings };
+
+    if (!verdict.found && !lettering && !fixes.length) return last;
+
+    if (attempt === 2) {
+      if (verdict.found) {
+        console.warn("check: dropped after redraw", { what, marks: verdict.marks });
+        return { ok: false, dropped: DROPPED_MARK };
+      }
+      if (lettering) {
+        console.warn("check: dropped after redraw", { what, letters: verdict.letters, note: said });
+        return { ok: false, dropped: DROPPED_TEXT };
+      }
+      return last;   // margins or palette only: shown, with the warning attached
+    }
+
+    console.warn("check: redrawing", {
+      what,
+      marks: verdict.marks,
+      lettering,
+      letters: verdict.letters,
+      panel: panel.notes,
+      modelChecked: verdict.ok,
+    });
+    extra = fixes.join(" ");
+  }
+  return last;
 }
 
-const DROPPED = {
-  error:
-    "One take kept coming back with a real team's logo on it, so we left it out. Try again for another.",
-};
+const DROPPED_MARK =
+  "One take kept coming back with a real team's logo on it, so we left it out. Try again for another.";
+const DROPPED_TEXT =
+  "One take kept coming back with lettering printed into the artwork, so we left it out. Your team name goes on as type afterwards, not into the design. Try again for another.";
 
 /** One multimodal draw: the text plus whatever reference images go with it. */
 async function draw(
@@ -265,6 +336,11 @@ type Body = {
   colors?: { name: string; hex: string }[];
   // Illustration style. Collar ids are ignored — see COLLARS.
   style?: string;
+  /* Sent so they can be removed, never so they can be drawn. See scrub(). The
+     roster is not accepted at all: player names and numbers belong to the
+     nameplate layer and this endpoint has no use for them. */
+  teamName?: string;
+  playerNames?: string[];
   // One of the keys of VARIANTS. Omitted on a refinement, and for anything
   // unrecognised the brief is drawn straight with no variant steer.
   variant?: string;
@@ -288,7 +364,12 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Body must be JSON" }, { status: 400 });
   }
 
-  const theme = (body.theme || body.prompt || "").trim().slice(0, 600);
+  /* Scrubbed before it is read for anything: the block list, the prompt, the
+     edit instruction. Names reach this endpoint only to be taken back out. */
+  const theme = scrub(
+    (body.theme || body.prompt || "").trim().slice(0, 600),
+    [body.teamName ?? "", ...(body.playerNames ?? [])].filter(Boolean),
+  );
   if (!theme) {
     return Response.json(
       { error: "Describe the artwork first" },
@@ -357,7 +438,7 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     if (base) {
-      const edited = await drawClean("refinement", (extra) =>
+      const edited = await produce("refinement", palette, (extra) =>
         twice("edit", () =>
           draw([
             { type: "text", text: extra ? `${editInstruction} ${extra}` : editInstruction },
@@ -365,7 +446,7 @@ export async function POST(request: Request): Promise<Response> {
           ]),
         ),
       );
-      if (edited === "dropped") return Response.json(DROPPED, { status: 422 });
+      if (edited && !edited.ok) return Response.json({ error: edited.dropped }, { status: 422 });
       if (!edited) {
         // The model answered in text instead of returning an image. Say so
         // rather than falling back to a fresh generation, which would throw
@@ -375,18 +456,16 @@ export async function POST(request: Request): Promise<Response> {
           { status: 502 },
         );
       }
-
-      const report = checkPanel({ data: edited.base64, mediaType: edited.mediaType }, palette);
-      if (report.notes.length) console.warn("check-panel: refinement", report.notes);
+      if (edited.warnings.length) console.warn("check: refinement shipped with warnings", edited.warnings);
       return Response.json({
-        image: `data:${edited.mediaType};base64,${edited.base64}`,
-        warnings: report.notes,
+        image: `data:${edited.made.mediaType || "image/png"};base64,${edited.made.base64}`,
+        warnings: edited.warnings,
       });
     }
 
-    const make = (fix: string) => (extra: string) =>
+    const drawn = await produce(body.variant ?? "generation", palette, (extra) =>
       twice("generation", async () => {
-        const text = [instruction, fix, extra].filter(Boolean).join(" ");
+        const text = [instruction, extra].filter(Boolean).join(" ");
         for (const size of SIZES) {
           try {
             const { image } = await generateImage({ model: MODEL, prompt: text, size });
@@ -397,43 +476,21 @@ export async function POST(request: Request): Promise<Response> {
           }
         }
         return null;
-      });
+      }),
+    );
 
-    const what = body.variant ?? "generation";
-    const first = await drawClean(what, make(""));
-    if (first === "dropped") return Response.json(DROPPED, { status: 422 });
-    if (!first) {
+    if (drawn && !drawn.ok) return Response.json({ error: drawn.dropped }, { status: 422 });
+    if (!drawn) {
       return Response.json(
         { error: "That didn't come back as an image. Try again in a moment." },
         { status: 502 },
       );
     }
-    let image: Made = first;
-
-    /* Margins and a wandering palette are both visible in the pixels and both
-       cost nothing to spot, so they buy one more draw that says what went
-       wrong. One, not more: two or three attempts per usable panel is the
-       expected rate, and the customer is waiting. Whatever comes back second is
-       what they get, with the warning attached. */
-    const read = (m: Made) => ({ data: m.base64, mediaType: m.mediaType || "image/png" });
-    let report = checkPanel(read(image), palette);
-    const fix = report.issues.map((i) => FIXES[i]).filter(Boolean).join(" ");
-    if (fix) {
-      console.warn("check-panel: redrawing", { what, notes: report.notes });
-      const again = await drawClean(what, make(fix));
-      if (again && again !== "dropped") {
-        const second = checkPanel(read(again), palette);
-        if (second.issues.length <= report.issues.length) {
-          image = again;
-          report = second;
-        }
-      }
-    }
-    if (report.notes.length) console.warn("check-panel: shipping with warnings", report.notes);
+    if (drawn.warnings.length) console.warn("check: shipping with warnings", drawn.warnings);
 
     return Response.json({
-      image: `data:${image.mediaType || "image/png"};base64,${image.base64}`,
-      warnings: report.notes,
+      image: `data:${drawn.made.mediaType || "image/png"};base64,${drawn.made.base64}`,
+      warnings: drawn.warnings,
     });
   } catch (err) {
     console.error("generate-concept failed", err);

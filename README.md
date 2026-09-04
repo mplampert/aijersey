@@ -51,9 +51,16 @@ match — square, full bleed, no garment, no folds, no shadows, no type.
 - **Colours** — factory colour card, multi-select. Passed into the prompt as the
   panel's palette, capped at five: past that a model treats the list as a
   suggestion.
-- **Artwork checks** — every generated panel is read for blank margins and for
-  a palette it ignored, and one bad read buys one redraw. `api/check-panel.ts`,
-  no dependencies.
+- **Artwork checks** — every generated panel is read before anyone sees it. A
+  real-world mark or any lettering is a hard reject: one redraw, and if it comes
+  back carrying either the take is dropped rather than shown. Blank margins and
+  a palette the model ignored buy a redraw and ship with a warning.
+  `api/check-panel.ts` does the pixel side with no dependencies; the lettering
+  verdict comes from the vision call `api/check-image.ts` was already making.
+- **Names never reach the model.** The team name travels in its own field, is
+  never interpolated into a prompt, and is scrubbed back out of the brief if a
+  customer typed it there. The roster is not sent at all. No image model sets
+  type legibly, and every one it draws has to be thrown away.
 - **Compositor** — unified or per-region artwork, shading contrast, overlay or
   soft-light, and a 1500 × 1500 transparent PNG export.
 - **Roster** — type, paste, or CSV. Parses `12 Sullivan L` and `31 Tremblay L G`.

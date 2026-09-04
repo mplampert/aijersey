@@ -1181,9 +1181,15 @@ $('#logoRm').onclick=()=>{
 /* Shared by the first generation and by every refinement. baseImage is the
    concept being edited, or null to draw a new one from scratch. */
 async function askConcept(prompt,baseImage,variant){
+  /* teamName is sent to be removed, never to be drawn. The brief has not
+     carried it since the crest became its own layer, but the brief is a free
+     text box and somebody typing their own team name into it is doing nothing
+     wrong — the function scrubs it back out. The roster never travels: player
+     names and numbers belong to the nameplate layer. */
   const res=await fetch(CFG.endpoint,{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({prompt,style:S.style,variant:variant||null,colors:S.colors,ownCrest:!!S.logo,baseImage:baseImage||null})
+    body:JSON.stringify({prompt,style:S.style,variant:variant||null,colors:S.colors,
+      teamName:$('#teamName').value.trim()||null,baseImage:baseImage||null})
   });
   if(!res.ok){
     const msg=await res.json().then(d=>d&&d.error,()=>null);
