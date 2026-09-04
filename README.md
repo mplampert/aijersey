@@ -83,6 +83,27 @@ than what it is of.
   Validates duplicate numbers, missing number/name/size, and the minimum.
 - **Order** — live total, kit add-ons priced per player, account fields.
 
+## Reading a failed generation
+
+Every failure prints one line to the function log — `netlify dev` puts those in
+the terminal — and the same diagnosis goes back to the browser console:
+
+```
+generate-concept FAIL bold rate-limit status=429 8.4s code=rate_limit_exceeded retry-after=12 sdk-retries=2 attempt=1/2 :: Rate limit reached for images per min
+generate-concept FAIL safe rejected code=lettering 21.0s dropped after redraw :: crest reads HARBUOR SEALS
+generate-concept OK scene 12.1s openai/gpt-image-2
+```
+
+`kind` is the thing to read first: `rate-limit`, `timeout`, `content-filter`,
+`auth`, `server`, `network`, `bad-request`, `no-image`, or `rejected` — that
+last one means the image arrived and our own checker threw it away, which is a
+different problem from the provider failing. `sdk-retries` is how many attempts
+the SDK made underneath before giving up, `attempt` is ours on top of that.
+
+A take that is dropped is never shown, so a run of three can land one image and
+still have cost six generations. `REDRAW` lines say what the checker objected to
+the first time.
+
 ## What isn't
 
 - **The model is setting type again, and that is the known risk.** Eleven

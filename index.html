@@ -1271,7 +1271,16 @@ $('#logoRm').onclick=()=>{
 
 /* Shared by the first generation and by every refinement. baseImage is the
    concept being edited, or null to draw a new one from scratch. */
+/* Names for the kinds the function reports, short enough to sit in a sentence
+   on the page. Anything unrecognised falls through to the generic line. */
+const TROUBLE={
+  'rate-limit':'rate limited','timeout':'timed out','content-filter':'blocked by a content filter',
+  'auth':'a key problem','bad-request':'rejected by the image service','server':'an image service outage',
+  'network':'a network problem','no-image':'no image returned','rejected':'failed our own checks',
+};
+
 async function askConcept(prompt,baseImage,variant){
+  const began=Date.now();
   /* teamName is sent for one clause and taken out of every other: it is set as
      the wordmark in the chest crest, and scrubbed back out of the brief so it
      does not also become part of the scene. The function holds the model to that
@@ -1283,14 +1292,30 @@ async function askConcept(prompt,baseImage,variant){
       ownCrest:!!S.logo,teamName:$('#teamName').value.trim()||null,
       baseImage:baseImage||null})
   });
+  const took=((Date.now()-began)/1000).toFixed(1);
   if(!res.ok){
-    const msg=await res.json().then(d=>d&&d.error,()=>null);
-    const e=new Error(msg||'Something went wrong — try again in a moment.');
-    e.guidance=res.status===422;   // trademark rejection, not a system failure
+    const body=await res.json().catch(()=>null);
+    const d=body&&body.detail;
+    /* The same diagnosis the function logged, so whichever console is open
+       carries it. Status, what the provider said, and how long it took before
+       it said it — which is the difference between a rate limit and a timeout. */
+    console.error(
+      `concept FAILED ${variant||'refinement'} ${d?d.kind:'unknown'} `+
+      `http=${res.status} status=${d&&d.status!=null?d.status:'-'} ${took}s `+
+      (d&&d.code?`code=${d.code} `:'')+
+      (d&&d.retryAfter?`retry-after=${d.retryAfter} `:'')+
+      (d&&d.inner?`sdk-retries=${d.inner} `:'')+
+      `:: ${d&&d.message?d.message:(body&&body.error)||'no detail returned'}`
+    );
+    const e=new Error((body&&body.error)||'Something went wrong — try again in a moment.');
+    e.guidance=res.status===422;   // a refusal, not a system failure
+    e.kind=d&&d.kind;
+    e.took=took;
     throw e;
   }
   const {image}=await res.json();
   if(!image) throw new Error('No image returned');
+  console.log(`concept ok ${variant||'refinement'} ${took}s`);
   return image;
 }
 function showBusy(line){
@@ -1515,10 +1540,16 @@ $('#gen').onclick=async()=>{
     showError(failed[0]||new Error('Something went wrong — try again in a moment.'));
     drawVersions();   // an earlier design is still one click away
   }else if(failed.length){
+    /* Say which failure it was. "2 of 3 didn't come back" sends somebody to the
+       logs; "2 of 3 were rate limited" is already the answer. */
+    const kinds=[...new Set(failed.map(e=>TROUBLE[e.kind]).filter(Boolean))];
     msg.className='saved bad';
-    msg.textContent=failed.length+' of the three didn\'t come back. Here '
+    msg.textContent=failed.length+' of the three didn\'t come back'
+      +(kinds.length?' — '+kinds.join(' and '):'')+'. Here '
       +(landed===1?'is the one that did':'are the '+landed+' that did')+'.';
     msg.hidden=false;
+    console.warn('concept run: '+landed+' of '+CFG.variants.length+' landed; failures: '
+      +failed.map(e=>(e.kind||'unknown')+' after '+(e.took||'?')+'s').join(', '));
   }
   btn.textContent='Show me the concept';
   btn.disabled=false;

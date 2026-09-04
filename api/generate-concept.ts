@@ -1,4 +1,4 @@
-import { experimental_generateImage as generateImage, generateText } from "ai";
+import { APICallError, RetryError, experimental_generateImage as generateImage, generateText } from "ai";
 // Compiled output is .js, and the runtime resolves this specifier verbatim —
 // so it names the built file, not the source. A ".ts" here type-checks fine
 // locally and then 500s in production.
@@ -311,6 +311,134 @@ export function buildPrompt(i: ConceptInput): string {
 type Ref = { data: string; mediaType: string };
 type Made = { base64: string; mediaType: string };
 
+/* Why a generation failed, in the terms that decide what to do about it. Two of
+ * three takes failing looks the same from the outside whether the provider is
+ * rate limiting us, timing out, refusing the prompt, or handing back a picture
+ * our own checker then threw away — and the fix is different for every one.
+ *
+ * The SDK retries internally and wraps what it collected in a RetryError, so
+ * the useful error is the one underneath: unwrapped here, or every log line
+ * says "maxRetriesExceeded" and nothing else. */
+export type Trouble = {
+  kind:
+    | "rate-limit"
+    | "timeout"
+    | "content-filter"
+    | "auth"
+    | "bad-request"
+    | "server"
+    | "network"
+    | "no-image"
+    | "rejected"
+    | "unknown";
+  status: number | null;
+  /** What the provider actually said, as far up as it can be dug out. */
+  message: string;
+  /** The provider's own error code or type, when it gives one. */
+  code: string | null;
+  /** Seconds, from a Retry-After header. */
+  retryAfter: string | null;
+  /** How many attempts the SDK made underneath us before giving up. */
+  inner: number;
+};
+
+const FILTER = [
+  "content policy", "content_policy", "safety system", "safety_system",
+  "moderation", "blocked", "prohibited", "violates", "not allowed",
+  "responsible ai", "sensitive",
+];
+const TIMEOUT = ["timeout", "timed out", "etimedout", "econnreset", "aborted", "socket hang up"];
+
+/** Digs the provider's own message out of a JSON error body. */
+function providerSays(body: string | undefined): { message: string | null; code: string | null } {
+  if (!body) return { message: null, code: null };
+  try {
+    const parsed = JSON.parse(body);
+    const e = parsed?.error ?? parsed;
+    const message = typeof e?.message === "string" ? e.message : null;
+    const code = typeof e?.code === "string" ? e.code : typeof e?.type === "string" ? e.type : null;
+    return { message, code };
+  } catch {
+    // Not JSON — an HTML error page or a proxy's plain text. Keep a little of it.
+    return { message: body.slice(0, 200).replace(/\s+/g, " ").trim() || null, code: null };
+  }
+}
+
+export function diagnose(err: unknown): Trouble {
+  /* Walk the whole chain, not just the top. The gateway wraps the provider's
+     APICallError in a class of its own — GatewayAuthenticationError and friends —
+     which carries statusCode but is not an APICallError, so testing the top for
+     one reported a plain 401 as "unknown, status -". The body, the headers and
+     the status can each be at a different depth, so each is looked for
+     separately rather than assuming one level holds them all. */
+  let inner = 0;
+  const chain: any[] = [];
+  let e: unknown = err;
+  for (let depth = 0; depth < 6 && e; depth++) {
+    if (RetryError.isInstance(e)) {
+      inner = Math.max(inner, e.errors.length);
+      e = e.lastError ?? (e as any).cause;
+      continue;
+    }
+    chain.push(e);
+    e = (e as any)?.cause;
+  }
+  const at = <T>(pick: (x: any) => T | undefined): T | undefined => {
+    for (const link of chain) {
+      const got = pick(link);
+      if (got !== undefined && got !== null) return got;
+    }
+    return undefined;
+  };
+
+  const status = at<number>((x) => (typeof x?.statusCode === "number" ? x.statusCode : undefined)) ?? null;
+  const body = at<string>((x) => (typeof x?.responseBody === "string" ? x.responseBody : undefined));
+  const headers = at<Record<string, string>>((x) => x?.responseHeaders);
+  const said = providerSays(body);
+  const typed = at<string>((x) => (typeof x?.type === "string" ? x.type : undefined));
+  const top = chain[0];
+  const raw = top instanceof Error ? top.message : String(err);
+  // Collapsed, because a provider message with newlines in it breaks the log line.
+  const message = (said.message ?? raw).replace(/\s+/g, " ").trim();
+  const code = said.code ?? typed ?? null;
+  const retryAfter = (headers?.["retry-after"] ?? headers?.["retry-after-ms"]) || null;
+  const call = APICallError.isInstance(top) ? top : null;
+
+  const haystack = `${message} ${code ?? ""} ${raw}`.toLowerCase();
+  const kind: Trouble["kind"] =
+    status === 429 ? "rate-limit"
+    : status === 401 || status === 403 ? "auth"
+    : status === 408 || status === 504 ? "timeout"
+    : TIMEOUT.some((t) => haystack.includes(t)) ? "timeout"
+    : FILTER.some((t) => haystack.includes(t)) ? "content-filter"
+    : status !== null && status >= 500 ? "server"
+    : status !== null && status >= 400 ? "bad-request"
+    : /no image|empty response|nocontentgenerated/.test(haystack) ? "no-image"
+    : call === null && status === null && /fetch|network|enotfound|econnrefused|dns/.test(haystack) ? "network"
+    : "unknown";
+
+  return { kind, status, message: message.slice(0, 400), code, retryAfter, inner };
+}
+
+/** One line per failure, in the shape a terminal can be read down. */
+function report(what: string, t: Trouble, ms: number, note = "") {
+  console.error(
+    [
+      `generate-concept FAIL ${what}`,
+      t.kind,
+      `status=${t.status ?? "-"}`,
+      `${(ms / 1000).toFixed(1)}s`,
+      t.code ? `code=${t.code}` : "",
+      t.retryAfter ? `retry-after=${t.retryAfter}` : "",
+      t.inner ? `sdk-retries=${t.inner}` : "",
+      note,
+      `:: ${t.message}`,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
 /**
  * Runs a model call twice before giving up. These calls fail intermittently —
  * two of three variants have come back empty in one run — and each variant is
@@ -322,13 +450,16 @@ async function twice<T>(
   call: () => Promise<T | null>,
 ): Promise<T | null> {
   for (let attempt = 1; attempt <= 2; attempt++) {
+    const started = Date.now();
     try {
       const out = await call();
       if (out) return out;
-      if (attempt === 1) console.warn(`generate-concept: ${label} returned no image, retrying`);
+      report(label, { kind: "no-image", status: null, message: "the call returned no image", code: null, retryAfter: null, inner: 0 },
+             Date.now() - started, `attempt=${attempt}/2`);
     } catch (err) {
+      const t = diagnose(err);
+      report(label, t, Date.now() - started, `attempt=${attempt}/2`);
       if (attempt === 2) throw err;
-      console.warn(`generate-concept: ${label} failed, retrying`, err);
     }
   }
   return null;
@@ -361,6 +492,7 @@ async function produce(
   make: (extra: string) => Promise<Made | null>,
 ): Promise<Produced> {
   let last: Produced = null;
+  const began = Date.now();
 
   for (let attempt = 1, extra = ""; attempt <= 2; attempt++) {
     const made = await make(extra);
@@ -394,24 +526,24 @@ async function produce(
 
     if (attempt === 2) {
       if (verdict.found) {
-        console.warn("check: dropped after redraw", { what, marks: verdict.marks });
+        report(what, { kind: "rejected", status: null, code: "real-world mark", retryAfter: null, inner: 0,
+                       message: verdict.marks.join(", ") || "a real-world mark" }, Date.now() - began, "dropped after redraw");
         return { ok: false, dropped: DROPPED_MARK };
       }
       if (lettering) {
-        console.warn("check: dropped after redraw", { what, letters: verdict.letters, note: said });
+        report(what, { kind: "rejected", status: null, code: "lettering", retryAfter: null, inner: 0,
+                       message: said }, Date.now() - began, "dropped after redraw");
         return { ok: false, dropped: DROPPED_TEXT };
       }
       return last;
     }
 
-    console.warn("check: redrawing", {
-      what,
-      marks: verdict.marks,
-      lettering,
-      letters: verdict.letters,
-      pixels: panel.notes,
-      modelChecked: verdict.ok,
-    });
+    console.warn(
+      `generate-concept REDRAW ${what} ${(( Date.now() - began) / 1000).toFixed(1)}s ` +
+      `marks=${verdict.marks.join("|") || "-"} lettering=${lettering} ` +
+      `letters=${verdict.letters.join("|") || "-"} model-checked=${verdict.ok} ` +
+      `pixels=${panel.notes.join("|") || "-"}`,
+    );
     extra = fixes.join(" ");
   }
   return last;
@@ -465,6 +597,7 @@ type Body = {
 };
 
 export async function POST(request: Request): Promise<Response> {
+  const began = Date.now();
   if (!process.env.AI_GATEWAY_API_KEY) {
     return Response.json(
       { error: "AI_GATEWAY_API_KEY is not set" },
@@ -582,15 +715,23 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const drawn = await produce(body.variant ?? "generation", crest, (extra) =>
-      twice("generation", async () => {
+      twice(body.variant ?? "generation", async () => {
         const text = [instruction, extra].filter(Boolean).join(" ");
         for (const size of SIZES) {
+          const started = Date.now();
           try {
             const { image } = await generateImage({ model: MODEL, prompt: text, size });
             if (image) return image;
           } catch (err) {
-            if (size === SIZES[SIZES.length - 1]) throw err;
-            console.warn(`generate-concept: ${MODEL} refused ${size}, falling back`, err);
+            const t = diagnose(err);
+            /* Only a complaint about the size is worth trying the next one for.
+               Everything else — auth, rate limits, filters — fails the same way
+               at every size, and falling through doubled both the wait and the
+               spend on every failure that was never about the frame. */
+            const aboutSize =
+              t.status === 400 && /\bsize\b|dimension|resolution|not supported|invalid value/i.test(t.message);
+            if (!aboutSize || size === SIZES[SIZES.length - 1]) throw err;
+            report(`${body.variant ?? "generation"} size=${size}`, t, Date.now() - started, "trying the next size");
           }
         }
         return null;
@@ -604,17 +745,40 @@ export async function POST(request: Request): Promise<Response> {
         { status: 502 },
       );
     }
+    console.log(
+      `generate-concept OK ${body.variant ?? "generation"} ${((Date.now() - began) / 1000).toFixed(1)}s ${MODEL}`,
+    );
     return Response.json({
       image: `data:${drawn.made.mediaType || "image/png"};base64,${drawn.made.base64}`,
     });
   } catch (err) {
-    console.error("generate-concept failed", err);
+    const t = diagnose(err);
+    report(body.variant ?? "generation", t, Date.now() - began, "gave up");
+    /* The customer gets a sentence they can act on; the caller gets the whole
+       diagnosis, so the browser console carries the same detail the terminal
+       does and neither has to be read to work out what the other saw. */
     return Response.json(
-      { error: "Couldn't generate that artwork. Try describing it differently." },
-      { status: 502 },
+      { error: SORRY[t.kind] ?? SORRY.unknown, detail: t },
+      { status: t.kind === "rate-limit" ? 429 : t.kind === "content-filter" ? 422 : 502 },
     );
   }
 }
+
+/* One sentence per failure, in the customer's terms. They are not going to act
+   on a status code, but "too many at once" and "try describing it differently"
+   are different instructions and they deserve the right one. */
+const SORRY: Record<Trouble["kind"], string> = {
+  "rate-limit": "The image service is busy right now. Wait a moment and try again.",
+  timeout: "That took too long to come back. Try again in a moment.",
+  "content-filter": "The image service wouldn't draw that one. Try describing it differently.",
+  auth: "We can't reach the image service right now — that's on us, not you.",
+  "bad-request": "Couldn't generate that concept. Try describing it differently.",
+  server: "The image service is having trouble. Try again in a moment.",
+  network: "Couldn't reach the image service. Try again in a moment.",
+  "no-image": "That didn't come back as an image. Try again in a moment.",
+  rejected: "That one didn't pass our own checks. Try again for another.",
+  unknown: "Couldn't generate that concept. Try describing it differently.",
+};
 
 export async function GET(): Promise<Response> {
   return Response.json({ error: "Use POST" }, { status: 405 });
