@@ -1,6 +1,6 @@
 /* Static server for local preview: `npm run dev`.
  *
- * The order page needs its functions, so it still wants `netlify dev` — this
+ * The order page needs its functions, so it still wants `vercel dev` — this
  * serves the repo as files and nothing else. It exists for /mockup/, which is
  * pure static and only needs the five PNGs served over http rather than file://,
  * where the absolute asset paths would resolve against the filesystem root.
@@ -37,6 +37,6 @@ createServer(async (req,res)=>{
     res.end('Not found');
   }
 }).listen(PORT,()=>{
-  console.log(`  order page   http://localhost:${PORT}/          (no /api — use netlify dev for that)`);
+  console.log(`  order page   http://localhost:${PORT}/          (no /api — use vercel dev for that)`);
   console.log(`  compositor   http://localhost:${PORT}/mockup/`);
 });

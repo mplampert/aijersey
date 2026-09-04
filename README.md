@@ -4,29 +4,45 @@ One-page mobile-first flow: design → colours → roster → order.
 
 ## Deploy
 
-```
-npm i -g netlify-cli      # if you don't have it
-netlify deploy --prod
-```
-
-Set the env vars, then redeploy — Netlify env changes don't reach functions
-until a new deploy:
+Vercel. The `/api` handlers are Vercel serverless functions, and the concept
+images live in Vercel Blob.
 
 ```
-netlify env:set AI_GATEWAY_API_KEY <key>    # image generation and the checker
-netlify env:set BLOB_READ_WRITE_TOKEN <key> # concept images
-netlify env:set AIRTABLE_TOKEN <key>        # data.records:write on the base
-netlify env:set AIRTABLE_BASE_ID <id>
-netlify env:set AIRTABLE_TABLE_ID <id>
-netlify env:set RESEND_API_KEY <key>        # the customer's copy of their design
-netlify env:set SITE_URL https://…          # optional; where the reopen link points
-netlify env:set GHL_API_TOKEN <key>         # optional; the CRM row for a saved design
-netlify env:set GHL_LOCATION_ID <id>        # optional; the GHL sub-account
-netlify deploy --prod
+npm i -g vercel      # if you don't have it
+vercel link          # once — connects this folder to the Vercel project
+vercel --prod
 ```
 
-Local: `netlify dev` for the order page, which needs its functions.
-`npm run dev` serves the repo as static files — enough for `/mockup/`, which
+Set the env vars, then redeploy. Vercel bakes them into a deployment as it is
+built, so a variable added afterwards does not reach the functions already
+running — it applies to the next deploy, and only to it:
+
+```
+vercel env add AI_GATEWAY_API_KEY production    # image generation and the checker
+vercel env add BLOB_READ_WRITE_TOKEN production # concept images
+vercel env add AIRTABLE_TOKEN production        # data.records:write on the base
+vercel env add AIRTABLE_BASE_ID production
+vercel env add AIRTABLE_TABLE_ID production
+vercel env add RESEND_API_KEY production        # the customer's copy of their design
+vercel env add SITE_URL production              # optional; where the reopen link points
+vercel env add GHL_API_TOKEN production         # optional; the CRM row for a saved design
+vercel env add GHL_LOCATION_ID production       # optional; the GHL sub-account
+vercel --prod
+```
+
+Each prompts for the value rather than taking it as an argument, so no key ends
+up in shell history; pipe it in to script one:
+`printf %s '<key>' | vercel env add GHL_API_TOKEN production`. Repeat with
+`preview` or `development` in place of `production` for the environments that
+need the same value. `vercel env ls` says what is actually set, which is the
+first thing to check when a function behaves as though a key is missing —
+**connecting a Blob store to the project sets `BLOB_READ_WRITE_TOKEN` on its
+own**, so that one is usually already there.
+
+Local: `vercel dev` for the order page, which needs its functions. Run
+`vercel env pull .env.local` first so it has the keys — that file holds real
+secrets and is gitignored, along with `.vercel/`. `npm run dev` serves the repo
+as static files instead, with no functions at all — enough for `/mockup/`, which
 has no backend at all.
 
 ## The two halves
@@ -220,8 +236,9 @@ long it is, never any of it.
 So, for a save where no contact appeared, in the function log:
 
 - **`ghl: NO CONTACT WRITTEN — not configured`** — the env vars aren't reaching
-  the function. Netlify env changes don't apply until a new deploy, so this is
-  also what a variable that was set but not redeployed behind looks like.
+  the function. Vercel bakes env vars into a deployment as it builds, so this is
+  also what a variable added after the running deployment was built looks like —
+  `vercel env ls` will show it and the function still won't see it.
 - **Nothing at all** — the save never got as far as the CRM. Look further up for
   the Airtable patch failing, or for the address not being in the payload.
 - **`ghl ← upsert 401`** — the token. `Invalid JWT` is a bad or expired one;
@@ -294,8 +311,9 @@ mail that did not go.
 
 ## Reading a failed generation
 
-Every failure prints one line to the function log — `netlify dev` puts those in
-the terminal — and the same diagnosis goes back to the browser console:
+Every failure prints one line to the function log — `vercel dev` puts those in
+the terminal, and in production they are the project's Runtime Logs — and the
+same diagnosis goes back to the browser console:
 
 ```
 generate-concept FAIL bold rate-limit status=429 8.4s code=rate_limit_exceeded retry-after=12 sdk-retries=2 attempt=1/2 :: Rate limit reached for images per min

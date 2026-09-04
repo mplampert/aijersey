@@ -248,8 +248,8 @@ export async function upsertContact(lead: Lead): Promise<Upserted> {
   if (missing.length) {
     /* Not an error — the page runs perfectly well without a CRM behind it — but
        said plainly, because this is the first thing "no contact appeared" turns
-       out to be, and on Netlify an env var that is set but not redeployed
-       behind still reads as unset in the function. */
+       out to be, and on Vercel a variable added after the running deployment
+       was built still reads as unset inside it. */
     console.warn(`ghl: NO CONTACT WRITTEN — not configured (${missing.join(", ")})`);
     return { ok: false, reason: `not configured: ${missing.join(", ")}` };
   }
