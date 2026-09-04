@@ -322,15 +322,20 @@ textarea{resize:vertical;line-height:1.5}
 .code b{font-weight:700;font-size:18px;letter-spacing:.12em;color:var(--crease);font-variant-numeric:tabular-nums}
 /* One row per concept while a run is going, so three takes arriving over a
    minute look like progress rather than like nothing happening. */
-/* The way back in when the code is gone. Folded away, because it is for the
-   customer who comes back rather than the one who is here now. */
-.recover{margin-top:18px;border-top:1px solid var(--seam-lo);padding-top:14px}
-.recover .link{
+/* The way back in, next to the code — which is where somebody who has lost one
+   looks first. Folded away, because it is for the customer who comes back
+   rather than the one who is here now. */
+.find{margin:10px 0 0}
+.find .link{
   background:none;border:0;padding:0;font:inherit;font-size:14px;
   color:var(--ice-2);text-decoration:underline;cursor:pointer;
 }
-.recover .link:hover{color:var(--ink)}
-.recover #recover{margin-top:10px}
+.find .link:hover{color:var(--ink)}
+.finder{
+  margin-top:12px;padding:14px;border:1px solid var(--seam);
+  border-radius:10px;background:var(--panel);
+}
+.finder input{text-transform:none}
 .runs{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
 .runs li{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--dim)}
 .runs b{font-weight:500;color:var(--ink)}
@@ -593,6 +598,20 @@ footer{
         </p>
         <p class="saved" id="shareMsg" hidden role="status"></p>
 
+        <p class="find">
+          <button type="button" class="link" id="findBtn" aria-expanded="false"
+                  aria-controls="finder">Find my designs</button>
+        </p>
+        <div class="finder" id="finder" hidden>
+          <label class="fld" for="findInput">Design code, or the address you saved with</label>
+          <p class="note">A code opens that design straight away. An address gets you an
+            email with a link to your gallery &mdash; everything you&rsquo;ve saved.</p>
+          <input type="text" id="findInput" placeholder="XLD3 &mdash; or you@yourteam.com"
+                 autocomplete="email" autocapitalize="characters" spellcheck="false">
+          <button class="ghost" id="findGo">Find it</button>
+          <p class="saved" id="findMsg" hidden role="status"></p>
+        </div>
+
         <ul class="runs" id="runs" hidden aria-label="Progress"></ul>
         <div class="vers" id="vers" hidden role="group" aria-label="Concept options"></div>
         <p class="saved" id="genMsg" hidden role="status"></p>
@@ -621,17 +640,7 @@ footer{
           <button class="ghost" id="saveBtn">Save this design for me</button>
           <p class="saved" id="saveMsg" hidden role="status"></p>
 
-          <div class="recover">
-            <button type="button" class="link" id="recoverBtn" aria-expanded="false">
-              Saved a design here before?
-            </button>
-            <div id="recover" hidden>
-              <p class="note">Enter the address you saved with and we&rsquo;ll email you a link to
-                your gallery &mdash; every design on file for it.</p>
-              <input type="email" id="recoverEmail" placeholder="you@yourteam.com" autocomplete="email">
-              <button class="ghost" id="recoverGo">Email me my designs</button>
-              <p class="saved" id="recoverMsg" hidden role="status"></p>
-            </div>
+        </div>
           </div>
         </div>
       </div>
@@ -1530,30 +1539,39 @@ if(navigator.share){
    be looked at, refined or ordered, but the address capture stays shut: that
    record belongs to whoever made it, and an address entered here would land on
    their row. Refining files a design of your own, and it opens then. */
+/* Fetches a design by its code. Throws rather than drawing anything, so a code
+   typed into the finder that turns out to be wrong costs an error message and
+   not the concept already on screen. */
+async function fetchDesign(code){
+  const res=await fetch(CFG.getEndpoint+'?code='+encodeURIComponent(code));
+  const d=await res.json().catch(()=>null);
+  if(!res.ok||!d||!d.image){
+    const err=new Error((d&&d.error)||'We couldn\u2019t open design '+code+'.');
+    err.guidance=true;throw err;
+  }
+  return d;
+}
+
+/* Puts a fetched design on the canvas, colors and collar with it. */
+function showDesign(d){
+  if(Array.isArray(d.colors)&&d.colors.length){ S.colors=d.colors; drawPicked(); }
+  const st=CFG.styles.find(x=>x.name===d.style);
+  if(st){
+    S.style=st.id;
+    $('#styles').querySelectorAll('button').forEach(b=>
+      b.setAttribute('aria-pressed',b.dataset.id===st.id?'true':'false'));
+  }
+  S.versions.push({src:d.image,raw:d.image,label:'',code:d.code,recordId:null});
+  showVersion(S.versions.length-1);
+  $('#refine').hidden=false;
+}
+
 async function openShared(){
   const code=(new URLSearchParams(location.search).get('d')||'').trim().toUpperCase();
   if(!code) return;
   showBusy('Opening design '+code);
-  try{
-    const res=await fetch(CFG.getEndpoint+'?code='+encodeURIComponent(code));
-    const d=await res.json().catch(()=>null);
-    if(!res.ok||!d||!d.image){
-      const err=new Error((d&&d.error)||'We couldn\u2019t open design '+code+'.');
-      err.guidance=true;throw err;
-    }
-    if(Array.isArray(d.colors)&&d.colors.length){ S.colors=d.colors; drawPicked(); }
-    const st=CFG.styles.find(x=>x.name===d.style);
-    if(st){
-      S.style=st.id;
-      $('#styles').querySelectorAll('button').forEach(b=>
-        b.setAttribute('aria-pressed',b.dataset.id===st.id?'true':'false'));
-    }
-    S.versions.push({src:d.image,raw:d.image,label:'',code:d.code,recordId:null});
-    showVersion(S.versions.length-1);
-    $('#refine').hidden=false;
-  }catch(err){
-    showError(err);
-  }
+  try{ showDesign(await fetchDesign(code)); }
+  catch(err){ showError(err); }
 }
 function showVersion(i){
   S.vIndex=i;S.concept=S.versions[i].src;
@@ -1707,41 +1725,85 @@ $('#refineChips').querySelectorAll('button').forEach(b=>{
 });
 
 /* ---------------- getting back in ---------------- */
-/* The code was the only route to a design, and a customer who lost it had lost
-   the design however carefully they saved it. This reads the address instead. */
-$('#recoverBtn').onclick=()=>{
-  const box=$('#recover'), open=box.hidden;
-  box.hidden=!open;
-  $('#recoverBtn').setAttribute('aria-expanded',open?'true':'false');
-  if(open) $('#recoverEmail').focus();
-};
+/* One box, two answers. A code is four characters and opens that design on the
+ * spot; an address is emailed a link to the whole gallery. Asking which one
+ * somebody has before letting them type it is a question they should not have
+ * to answer — the shapes are unmistakable.
+ *
+ * The alphabet has no I, no O, no 1 and no 0, because those are the pairs
+ * people misread off a screen. A code typed with one in it is refused with the
+ * reason rather than sent to the server to fail there.
+ */
+const CODE_CHARS=/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
+const CONFUSABLE=/[IO10]/;
 
-$('#recoverGo').onclick=async()=>{
-  const email=$('#recoverEmail').value.trim();
-  const msg=$('#recoverMsg'), btn=$('#recoverGo');
+$('#findBtn').onclick=()=>{
+  const box=$('#finder'), open=box.hidden;
+  box.hidden=!open;
+  $('#findBtn').setAttribute('aria-expanded',open?'true':'false');
+  if(open) $('#findInput').focus();
+};
+$('#findInput').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); $('#findGo').click(); } };
+
+async function findByCode(code,msg){
+  const d=await fetchDesign(code);
+  showDesign(d);
+  /* So a reload keeps the design, and the address bar matches what is on
+     screen — the same link the Copy link button hands out. */
+  history.replaceState(null,'',shareUrl(d.code));
+  $('#finder').hidden=true;
+  $('#findBtn').setAttribute('aria-expanded','false');
+  $('#findInput').value='';
+  $('#canvas').scrollIntoView({
+    behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',
+    block:'center'
+  });
+}
+
+async function findByAddress(email,msg){
+  const res=await fetch(CFG.recoverEndpoint,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email})
+  }).catch(()=>{
+    throw new Error('We couldn\'t reach the server — check your connection and try again.');
+  });
+  const d=await res.json().catch(()=>null);
+  if(!res.ok) throw new Error((d&&d.error)||'We couldn\'t look that up just now — try again in a moment.');
+  /* The same answer whether or not anything was found: the endpoint will not
+     say which addresses are on file, and the person who owns the address finds
+     out in their inbox either way. */
+  msg.className='saved ok';
+  msg.textContent=(d&&d.message)||'If we have designs saved under that address, a link is on its way.';
+  msg.hidden=false;
+}
+
+$('#findGo').onclick=async()=>{
+  const raw=$('#findInput').value.trim();
+  const msg=$('#findMsg'), btn=$('#findGo');
   msg.hidden=true;
-  if(!email){$('#recoverEmail').focus();return;}
-  btn.disabled=true;btn.textContent='Looking…';
+  if(!raw){ $('#findInput').focus(); return; }
+
+  const code=raw.toUpperCase().replace(/\s+/g,'');
+  const looksLikeEmail=raw.includes('@');
+
+  if(!looksLikeEmail && !CODE_CHARS.test(code)){
+    msg.className='saved bad';
+    msg.textContent = code.length===4 && CONFUSABLE.test(code)
+      ? 'Design codes never use I, O, 1 or 0 — they are too easy to misread. Check those characters and try again.'
+      : 'That is neither a 4-character design code nor an email address. Check it and try again.';
+    msg.hidden=false;$('#findInput').focus();return;
+  }
+
+  btn.disabled=true;btn.textContent=looksLikeEmail?'Looking…':'Opening…';
   try{
-    const res=await fetch(CFG.recoverEndpoint,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email})
-    }).catch(()=>{
-      throw new Error('We couldn\'t reach the server — check your connection and try again.');
-    });
-    const d=await res.json().catch(()=>null);
-    if(!res.ok) throw new Error((d&&d.error)||'We couldn\'t look that up just now — try again in a moment.');
-    /* The same answer whether or not anything was found: the endpoint will not
-       say which addresses are on file, and the person who owns the address
-       finds out in their inbox either way. */
-    msg.className='saved ok';
-    msg.textContent=(d&&d.message)||'If we have designs saved under that address, a link is on its way.';
+    if(looksLikeEmail) await findByAddress(raw,msg);
+    else await findByCode(code,msg);
   }catch(err){
     msg.className='saved bad';
     msg.textContent=err.message;
-  }finally{
     msg.hidden=false;
-    btn.disabled=false;btn.textContent='Email me my designs';
+  }finally{
+    btn.disabled=false;btn.textContent='Find it';
   }
 };
 

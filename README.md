@@ -62,6 +62,10 @@ than what it is of.
 
 - **Design** — prompt + idea chips + logo upload. Posts to `/api/generate-concept`
   and shows what comes back.
+- **Find my designs** — one box beside the design code that takes a code or an
+  address. The shapes are unmistakable, so nobody is asked which one they have.
+  A code that turns out to be wrong costs an error message and not the concept
+  already on screen.
 - **Crest** — an uploaded logo is composited onto the returned photograph
   untouched, and the chest is asked to be left clear for it. Where it goes is
   found in the pixels, since the model reframes on every generation. A customer
@@ -120,8 +124,9 @@ collects everything they ever save and a mail full of individual links goes
 stale the moment they make another one. The concept they saved is attached, so
 the mail still shows something to somebody who never clicks through.
 
-**Lookup.** "Saved a design here before?" takes an address and emails the same
-gallery link. `api/email-designs.ts` answers identically whether or not the
+**Lookup.** "Find my designs", next to the design code, takes either. A
+four-character code opens that design on the spot, no email involved. An address
+is emailed the same gallery link. `api/email-designs.ts` answers identically whether or not the
 address is on file: saying "no designs found" would turn it into a way to ask
 which addresses are real, and the person who owns the address finds out in their
 inbox either way.
