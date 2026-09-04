@@ -3,13 +3,24 @@ import { experimental_generateImage as generateImage, generateText } from "ai";
 // so it names the built file, not the source. A ".ts" here type-checks fine
 // locally and then 500s in production.
 import { checkImage } from "./check-image.js";
+import { checkPanel, type PanelIssue } from "./check-panel.js";
 
 /**
  * POST /api/generate-concept
  *
- * Generates the customer-facing CONCEPT image only. Not a production file —
- * the factory redraws from this, and the customer approves the factory's
- * 48-hour proof, never this image.
+ * Generates the artwork panel only — a flat illustrated square, no garment.
+ *
+ * The jersey it goes on is a fixed 3D render, and the mockup compositor at
+ * /mockup/ clips this panel through the garment's four region masks and lays
+ * the render's own shading back over the top. So the model is never asked for
+ * a jersey. Asked for one it returns a different garment every time, and the
+ * shadows it paints fight the real shading pass and the composite goes muddy.
+ *
+ * That inversion is the whole point of this endpoint: the garment is ours, the
+ * artwork is the model's.
+ *
+ * Not production art. The factory redraws from this, and the customer approves
+ * the factory's 48-hour proof, never this image.
  *
  * Routed through Vercel AI Gateway, so one key covers every provider and
  * swapping models is a string change below.
@@ -22,12 +33,19 @@ import { checkImage } from "./check-image.js";
 // "google/gemini-2.5-flash-image" (cheapest), "black-forest-labs/flux-2-pro".
 const MODEL = "openai/gpt-image-2";
 
-// Refinement needs the previous concept as an input image, and generateImage()
+// Refinement needs the previous panel as an input image, and generateImage()
 // has no parameter for one — ImageModelV2CallOptions is prompt-only, for every
 // provider, so no image model can edit through it. Editing therefore runs
 // through generateText with a multimodal image model, which takes the previous
-// concept as a file part and returns the edit in result.files.
+// panel as a file part and returns the edit in result.files.
 const EDIT_MODEL = "google/gemini-2.5-flash-image";
+
+/* The compositor's canvas is 1500 square. Ask for the nearest square the model
+   will give and take 1024 if it refuses — a size a slug does not happen to
+   accept must not be able to take generation down. Anything short of 1500 is
+   scaled up when the compositor fits it to the garment, which is one drawImage
+   there and would be a whole image library here. */
+const SIZES = ["1536x1536", "1024x1024"] as const;
 
 // Screened before spending a call. Crude on purpose — the real gate is the
 // human review on every 48-hour proof.
@@ -38,39 +56,96 @@ const BLOCKED = [
   "bauer", "ccm", "warrior hockey",
 ];
 
-// Collar and silhouette, picked by the customer in step 1 so the garment is
-// fixed rather than invented on each call. Keys match CFG.styles in index.html.
-const STYLES: Record<string, string> = {
-  laced:
-    "The collar is a traditional laced collar: a short lace-up placket at the throat, laces visible.",
-  vneck:
-    "The collar is a modern V-neck: a clean V opening at the throat, no lacing and no placket.",
-  crew:
-    "The collar is a plain crew neck: a round ribbed collar, no lacing, no placket and no V.",
-};
-const DEFAULT_STYLE = "laced";
+const STYLE_DEFAULT =
+  "bold flat color fills, clean confident line work, screen-print style, " +
+  "high contrast, vector illustration";
 
-// Three takes on the same brief, so the options the customer picks between
-// differ by intent rather than by chance. The brief, the colors and the
-// collar are identical across all three — what moves is how hard each one
-// leans on the print. None of them is a plain sweater: the quiet one is quiet
-// across the whole garment, not bare. Keys match CFG.variants in index.html.
+/* Everything the panel must not contain. The lighting terms carry most of the
+   weight: Base.png supplies all the shading, so a shadow the model paints is a
+   second light source arguing with the first. */
+const NEGATIVE = [
+  "no jersey", "no shirt", "no garment", "no clothing", "no fabric",
+  "no folds", "no wrinkles", "no shadows", "no highlights", "no lighting",
+  "no 3d render", "no mockup", "no hanger", "no mannequin", "no person",
+  "no text", "no letters", "no words", "no numbers", "no logo",
+  "no watermark", "no borders", "no margins", "no frame", "no drop shadow",
+].join(", ");
+
+/* Optional, and a nudge rather than a guarantee — models follow it
+   inconsistently. The masks put the shoulder yoke in the top quarter or so and
+   the hem in the bottom third, and a panel built in bands lands on them. */
+const BANDS =
+  "Horizontal band composition: distinct treatment across the top quarter, " +
+  "main scene through the middle, distinct treatment across the bottom third.";
+
+/* Three takes on the same brief, so the options the customer picks between
+   differ by intent rather than by chance. What moves is how hard each one leans
+   on the print. Keys match CFG.variants in index.html. */
 const VARIANTS: Record<string, string> = {
   safe:
-    "Play this one restrained. The artwork still covers the whole garment, but keep it quiet: a subtle allover texture, a soft gradient through the body, or a single motif carried over the shoulders and down the sleeves. Understated is the brief here — plain is not.",
+    "Play this one restrained: an allover texture, a quiet gradient, or a single motif repeated at a calm scale. Understated is the brief here — empty is not, and the panel still has to fill the frame.",
   scene:
-    "Push this one as far as the process goes: a fully illustrated garment. Build a scene or an environment that wraps the front, the back, both sleeves and the shoulders as one continuous picture, with a background, a foreground and painted depth. This take should be obviously printed and impossible to sew.",
+    "Push this one as far as the process goes: a fully illustrated scene with a background, a foreground and depth, running to all four edges.",
   bold:
-    "Make this one graphic. Large-scale shapes, hard-edged color blocking, oversized motifs or angular forms running off the edges of the garment at full bleed, printed right through the sleeves and hem. High contrast and poster-like, still unmistakably a hockey jersey.",
+    "Make this one graphic: large-scale shapes, hard-edged color blocking, oversized forms running off every edge. Poster-like and high contrast.",
 };
 
-/* The concept is two views side by side, so a square frame spends most of its
-   pixels on air above and below the jerseys and hands the customer two small
-   ones. Landscape first, square only if the model refuses the size — a size a
-   slug does not happen to accept must not be able to take generation down. */
-const SIZES = ["1536x1024", "1024x1024"] as const;
+/* The three collar ids the order page sends in `style`. They describe the
+   garment, which no longer comes from here, so they must not reach the prompt —
+   "laced" in an artwork brief buys a picture of shoelaces. */
+const COLLARS = ["laced", "vneck", "crew"];
+
+export type ConceptInput = {
+  theme: string;          // "tropical beach with palm trees and hibiscus"
+  palette: string[];      // ["#F26722", "#2E9BA6", "#E8D5B0"] — 3 to 5
+  style?: string;         // defaults to STYLE_DEFAULT
+  bands?: boolean;        // add the band-composition nudge
+  variant?: string;       // one of VARIANTS
+};
+
+/**
+ * The prompt, clause by clause. Each one is load-bearing:
+ *
+ * "Flat artwork panel" is the single most important phrase. Drop it and you get
+ * a jersey, every time. "Square 1:1" matches the compositor canvas so nothing
+ * has to be cropped. "Full-bleed, edge to edge" because models default to a
+ * centred subject with margins, and margins become bare fabric once the panel
+ * is clipped. The explicit hex palette is what ties the artwork to the team's
+ * colors, which is the entire reason these are team jerseys — three to five
+ * values, because past five the constraint gets ignored. "Symmetric about the
+ * vertical center" because the garment is: asymmetric artwork puts the weight
+ * off-centre once masked and the two sleeves come out mismatched. And "as if
+ * printed on paper" does more work than the whole negative list — models
+ * understand printed paper better than they understand "no shadows".
+ */
+export function buildPrompt(i: ConceptInput): string {
+  return [
+    "Flat artwork panel for a sublimated hockey jersey. Square 1:1 composition.",
+    `Full-bleed illustrated scene, edge to edge. Subject: ${i.theme}.`,
+    `Color palette limited strictly to: ${i.palette.join(", ")}.`,
+    i.style ?? STYLE_DEFAULT,
+    "Composition symmetric about the vertical center line.",
+    "Flat 2D artwork only, as if printed on paper, viewed straight on.",
+    i.bands ? BANDS : "",
+    VARIANTS[i.variant ?? ""] ?? "",
+    NEGATIVE,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/* What to say on the one retry a bad panel buys. Only these two are worth
+   spending a call on; a panel that came back the wrong shape is centre-cropped
+   and flagged, not redrawn. */
+const FIXES: Partial<Record<PanelIssue, string>> = {
+  margins:
+    "The previous attempt left blank margins around a centred subject. Fill the entire square to all four edges, with no border, no frame and no empty background.",
+  palette:
+    "The previous attempt used colors that were not asked for. Use only the listed colors and tints and shades of them, and no other hue.",
+};
 
 type Ref = { data: string; mediaType: string };
+type Made = { base64: string; mediaType: string };
 
 /**
  * Runs a model call twice before giving up. These calls fail intermittently —
@@ -95,14 +170,12 @@ async function twice<T>(
   return null;
 }
 
-type Made = { base64: string; mediaType: string };
-
 /**
  * Draws, then has the image checked for real-world marks. Prompting alone does
- * not stop image models putting an NHL shield on a collar — they are trained on
- * real hockey photography — so a positive verdict buys one redraw that names
- * what was seen. If the redraw is dirty too the variant is dropped: better one
- * option short than a jersey we cannot sell.
+ * not stop image models reaching for an NHL shield or a team crest — they are
+ * trained on real hockey imagery — so a positive verdict buys one redraw that
+ * names what was seen. If the redraw is dirty too the variant is dropped:
+ * better one option short than artwork we cannot sell.
  *
  * Every rejection is logged so the rate and the repeat offenders are visible.
  */
@@ -120,7 +193,7 @@ async function drawClean(
   console.warn("image-check: rejected, redrawing", { what, marks: verdict.marks });
 
   const second = await make(
-    `A previous attempt showed ${seen}. Do not include ${seen}, or any other real-world league, team, brand or manufacturer mark, anywhere on the garment or its collar.`,
+    `A previous attempt showed ${seen}. Do not include ${seen}, or any other real-world league, team, brand or manufacturer mark, anywhere in the artwork.`,
   );
   if (!second) return null;
 
@@ -155,17 +228,19 @@ function readDataUrl(value: string | null | undefined): Ref | null {
 }
 
 type Body = {
+  // What the artwork is of. `prompt` is what the order page has always sent.
+  theme?: string;
   prompt?: string;
+  // Three to five hex values. `colors` is the order page's colour card entries.
+  palette?: string[];
+  colors?: { name: string; hex: string }[];
+  // Illustration style. Collar ids are ignored — see COLLARS.
+  style?: string;
   // One of the keys of VARIANTS. Omitted on a refinement, and for anything
   // unrecognised the brief is drawn straight with no variant steer.
   variant?: string;
-  // One of the keys of STYLES. Anything else falls back to DEFAULT_STYLE.
-  style?: string;
-  colors?: { name: string; hex: string }[];
-  // Whether the customer has their own crest. The file itself never comes
-  // here: it is composited onto the finished jersey in the browser.
-  ownCrest?: boolean;
-  // Data URL of the concept being refined. Absent on the first generation.
+  bands?: boolean;
+  // Data URL of the panel being refined. Absent on the first generation.
   baseImage?: string | null;
 };
 
@@ -184,30 +259,24 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Body must be JSON" }, { status: 400 });
   }
 
-  const prompt = (body.prompt || "").trim().slice(0, 600);
-  if (!prompt) {
+  const theme = (body.theme || body.prompt || "").trim().slice(0, 600);
+  if (!theme) {
     return Response.json(
-      { error: "Describe the jersey first" },
+      { error: "Describe the artwork first" },
       { status: 400 },
     );
   }
 
   // Only data URLs — the browser sends back an image this function produced.
-  let base = readDataUrl(body.baseImage);
+  const base = readDataUrl(body.baseImage);
   if (body.baseImage && !base) {
     return Response.json(
-      { error: "That concept couldn't be read. Generate a new one and refine from there." },
+      { error: "That artwork couldn't be read. Generate a new one and refine from there." },
       { status: 400 },
     );
   }
 
-  /* The customer's crest never reaches the model. It came back mirrored,
-     redrawn, or replaced with an invention of the model's own, so the chest is
-     drawn empty here and the real file is composited onto it in the browser.
-     Only the fact of a crest travels, never the file. */
-  const ownCrest = !!body.ownCrest;
-
-  const hit = BLOCKED.find((b) => prompt.toLowerCase().includes(b));
+  const hit = BLOCKED.find((b) => theme.toLowerCase().includes(b));
   if (hit) {
     return Response.json(
       {
@@ -221,86 +290,40 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  // Naming the matched colors constrains the model to the factory's card.
-  // Shades and blends are allowed through deliberately: sublimation prints
-  // gradients for free, and "use only these colors" reads to a model as a
-  // flat-fill instruction, which is half of why the concepts came back looking
-  // sewn. The constraint that matters is the hue, not the number of tones.
-  const colorLine = body.colors?.length
-    ? `Build the design from these colors: ${body.colors
-        .map((c) => `${c.name} (${c.hex})`)
-        .join(", ")}. Tints, shades, blends and gradients between them are ` +
-      `encouraged; do not introduce a hue that is not on this list.`
-    : "";
+  /* Five at the outside. The constraint is what ties the artwork to the team,
+     and a model handed six hex codes starts treating the list as a suggestion. */
+  const palette = (body.palette ?? body.colors?.map((c) => c.hex) ?? [])
+    .filter((h) => /^#?[0-9a-f]{6}$/i.test(h))
+    .slice(0, 5);
+  if (!palette.length) {
+    return Response.json(
+      { error: "Pick some colors first — the artwork is built from them." },
+      { status: 400 },
+    );
+  }
 
-  // Front and back are requested in one image so the two views stay consistent
-  // with each other.
+  const style = body.style && !COLLARS.includes(body.style) ? body.style : undefined;
 
-  // Every rule below holds for an edit too, so a refinement can't quietly
-  // reintroduce branding or drift the two views apart.
-  const RULES = [
-    STYLES[body.style ?? ""] ?? STYLES[DEFAULT_STYLE],
-    "This is a fully sublimated garment: its artwork is printed into the fabric and may cover any part of it. Printed detail, gradients, illustration and edge-to-edge graphics are correct for this process and must never be flattened into plain panels or stitched-looking stripes.",
-    "Both views are the same physical garment: stripe placement, yoke shape, sleeve design and color blocking must match exactly between the front and the back.",
-    "The back must show a nameplate and a large two-digit number.",
-    "The nameplate reads exactly NAME and the number is exactly 00 — these are placeholders, never an invented player name or number.",
-    "The nameplate and the number must stay clearly legible against whatever artwork sits behind them.",
-    "Exactly one number on each sleeve, high on the upper arm. Never two numbers stacked on the same sleeve, and never more than one number per sleeve.",
-    "No branding of any kind: no manufacturer logos, brand names or brand marks, no neck or collar tags, no hem tags, anywhere on the garment.",
-    "No league logos, league shields, league crests or any real-world sports league marks anywhere on the garment — not on the chest, not on the collar, not on the back neck, not on the hem.",
-    "Plain neutral light grey studio background, even lighting, no hanger, no model, no props.",
-    "Sharp, high-detail product photography, in focus from edge to edge.",
-    "No border, no frame, no vignette and no drop shadow box — the jersey fills the frame.",
-  ];
+  const instruction = buildPrompt({
+    theme,
+    palette,
+    style,
+    bands: body.bands,
+    variant: body.variant,
+  });
 
-  /* Generation only, never an edit — an edit is told to change one thing, and
-     these lines would have it redesign the garment instead.
-
-     Image models are trained on photographs of real hockey sweaters, which are
-     overwhelmingly sewn twill: a solid body, a stitched stripe set, an appliqué
-     crest. Left alone the model reproduces that, which is the one thing this
-     process is not. Full-body artwork is the reason a customer picks
-     sublimation, so the brief has to say so in as many words. */
-  const SUBLIMATION = [
-    "The artwork is printed into the fabric across the entire garment. There are no sewn panels, no appliqué and no stitched stripes to design around, and no part of the jersey is off limits to the print.",
-    "Treat the whole garment as one continuous canvas: the design runs edge to edge across the chest and the back, over both sleeves, across the shoulders and the yoke, around the sides and through the hem. Do not treat the body as a plain field with a crest sitting on it.",
-    "Illustrated scenes, environments, allover patterns, gradients, fades, textures and large graphic elements that wrap around the garment are all available, and the design should use them wherever the brief suits it.",
-    "This process has no color limit and no separation cost, so smooth gradients, blends and photographic detail are free. Use them rather than flattening the design into flat blocks of solid color.",
-    "The finished design must be impossible to produce in sewn twill. If it could be built from a solid body, a few stitched stripes and an appliqué patch, it is wrong — redesign it with artwork that carries the whole garment.",
-  ];
-
-  const instruction = [
-    "Product photograph of a custom sublimated ice hockey jersey.",
-    "Show the front view and the back view side by side, both flat and squarely front-on.",
-    ...SUBLIMATION,
-    ...RULES,
-    colorLine,
-    "The brief may be only a few words. Treat it as direction, not as the full specification:",
-    "honour everything it does say, and design the rest yourself rather than leaving it plain or literal.",
-    "Where the brief is silent on subject, pattern, layout or striping, invent something that suits the colors and the mood it does give, and carry it across the whole garment. Silence is room to design, not a reason to leave the jersey plain.",
-    ownCrest
-      ? "Leave the centre chest clear for the team's own crest, which is added afterwards: no crest, no logo, no wordmark, no monogram, no graphic element and no lettering of any kind there. The artwork still covers the rest of the garment, but it must settle into a calm, uncluttered area at the centre chest so a crest can sit on top of it and still read."
-      : "Always produce a finished, well-composed jersey: artwork that carries the whole garment and reads from across the rink, an original team crest or wordmark on the chest, and something that still reads unmistakably as real teamwear.",
-    "Design brief:",
-    prompt,
-    // After the brief, so it steers the treatment without displacing what the
-    // customer actually asked for.
-    VARIANTS[body.variant ?? ""] ?? "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
+  /* An edit is told to change one thing, so the brief is not repeated — but
+     everything that keeps the panel compositable is, because a refinement that
+     quietly paints a jersey or a margin back in breaks the same pipeline. */
   const editInstruction = [
-    "Edit the attached ice hockey jersey concept.",
+    "Edit the attached flat artwork panel.",
     "Make only this change, described by the customer:",
-    prompt,
-    "Everything else must stay exactly as it is — the same garment, the same layout, the same crest, the same striping and the same colors wherever the requested change does not touch them.",
-    "Keep the front view and the back view side by side in the same arrangement as the attached image.",
-    ...RULES,
-    colorLine,
-  ]
-    .filter(Boolean)
-    .join(" ");
+    theme,
+    "Everything else must stay exactly as it is — the same composition, the same colors and the same treatment wherever the requested change does not touch them.",
+    "Keep it a flat 2D artwork panel, square, full bleed to all four edges, symmetric about the vertical center line.",
+    `Color palette limited strictly to: ${palette.join(", ")}.`,
+    NEGATIVE,
+  ].join(" ");
 
   try {
     if (base) {
@@ -308,7 +331,7 @@ export async function POST(request: Request): Promise<Response> {
         twice("edit", () =>
           draw([
             { type: "text", text: extra ? `${editInstruction} ${extra}` : editInstruction },
-            { type: "file", data: base!.data, mediaType: base!.mediaType },
+            { type: "file", data: base.data, mediaType: base.mediaType },
           ]),
         ),
       );
@@ -316,21 +339,24 @@ export async function POST(request: Request): Promise<Response> {
       if (!edited) {
         // The model answered in text instead of returning an image. Say so
         // rather than falling back to a fresh generation, which would throw
-        // away the design the customer is refining.
+        // away the panel the customer is refining.
         return Response.json(
           { error: "That change didn't come back as an image. Try describing it differently." },
           { status: 502 },
         );
       }
 
+      const report = checkPanel({ data: edited.base64, mediaType: edited.mediaType }, palette);
+      if (report.notes.length) console.warn("check-panel: refinement", report.notes);
       return Response.json({
         image: `data:${edited.mediaType};base64,${edited.base64}`,
+        warnings: report.notes,
       });
     }
 
-    const image = await drawClean(body.variant ?? "generation", (extra) =>
+    const make = (fix: string) => (extra: string) =>
       twice("generation", async () => {
-        const text = extra ? `${instruction} ${extra}` : instruction;
+        const text = [instruction, fix, extra].filter(Boolean).join(" ");
         for (const size of SIZES) {
           try {
             const { image } = await generateImage({ model: MODEL, prompt: text, size });
@@ -341,23 +367,48 @@ export async function POST(request: Request): Promise<Response> {
           }
         }
         return null;
-      }),
-    );
-    if (image === "dropped") return Response.json(DROPPED, { status: 422 });
-    if (!image) {
+      });
+
+    const what = body.variant ?? "generation";
+    const first = await drawClean(what, make(""));
+    if (first === "dropped") return Response.json(DROPPED, { status: 422 });
+    if (!first) {
       return Response.json(
         { error: "That didn't come back as an image. Try again in a moment." },
         { status: 502 },
       );
     }
+    let image: Made = first;
+
+    /* Margins and a wandering palette are both visible in the pixels and both
+       cost nothing to spot, so they buy one more draw that says what went
+       wrong. One, not more: two or three attempts per usable panel is the
+       expected rate, and the customer is waiting. Whatever comes back second is
+       what they get, with the warning attached. */
+    const read = (m: Made) => ({ data: m.base64, mediaType: m.mediaType || "image/png" });
+    let report = checkPanel(read(image), palette);
+    const fix = report.issues.map((i) => FIXES[i]).filter(Boolean).join(" ");
+    if (fix) {
+      console.warn("check-panel: redrawing", { what, notes: report.notes });
+      const again = await drawClean(what, make(fix));
+      if (again && again !== "dropped") {
+        const second = checkPanel(read(again), palette);
+        if (second.issues.length <= report.issues.length) {
+          image = again;
+          report = second;
+        }
+      }
+    }
+    if (report.notes.length) console.warn("check-panel: shipping with warnings", report.notes);
 
     return Response.json({
-      image: `data:${image.mediaType ?? "image/png"};base64,${image.base64}`,
+      image: `data:${image.mediaType || "image/png"};base64,${image.base64}`,
+      warnings: report.notes,
     });
   } catch (err) {
     console.error("generate-concept failed", err);
     return Response.json(
-      { error: "Couldn't generate that concept. Try describing it differently." },
+      { error: "Couldn't generate that artwork. Try describing it differently." },
       { status: 502 },
     );
   }
