@@ -17,7 +17,9 @@ import { checkPanel, type PanelIssue } from "./check-panel.js";
  * shadows it paints fight the real shading pass and the composite goes muddy.
  *
  * That inversion is the whole point of this endpoint: the garment is ours, the
- * artwork is the model's.
+ * artwork is the model's. So is the crest — it is a separate vector layer laid
+ * on after compositing, driven by the team name, so the panel carries no emblem
+ * of its own either. Background treatment, edge to edge, and nothing else.
  *
  * Not production art. The factory redraws from this, and the customer approves
  * the factory's 48-hour proof, never this image.
@@ -60,16 +62,42 @@ const STYLE_DEFAULT =
   "bold flat color fills, clean confident line work, screen-print style, " +
   "high contrast, vector illustration";
 
-/* Everything the panel must not contain. The lighting terms carry most of the
-   weight: Base.png supplies all the shading, so a shadow the model paints is a
-   second light source arguing with the first. */
+/* Everything the panel must not contain.
+ *
+ * The lighting terms carry a lot of the weight: Base.png supplies all the
+ * shading, so a shadow the model paints is a second light source arguing with
+ * the first.
+ *
+ * The emblem terms carry the rest. Asked for artwork for a hockey jersey a
+ * model reaches for the composition it has seen most — a crest in the middle of
+ * a chest — and returns a centred medallion with the treatment arranged around
+ * it. That is wrong twice over: the crest is a separate vector layer laid on
+ * after compositing, driven by the team name, and one baked into the print is
+ * not something the factory can separate back out. Naming the shapes it reaches
+ * for is what stops it; "no logo" alone did not. */
 const NEGATIVE = [
   "no jersey", "no shirt", "no garment", "no clothing", "no fabric",
   "no folds", "no wrinkles", "no shadows", "no highlights", "no lighting",
   "no 3d render", "no mockup", "no hanger", "no mannequin", "no person",
   "no text", "no letters", "no words", "no numbers", "no logo",
+  "no emblem", "no badge", "no medallion", "no shield", "no roundel",
+  "no centered logo mark", "no crest", "no monogram", "no wordmark",
+  "no central motif", "no circular device", "no coat of arms",
   "no watermark", "no borders", "no margins", "no frame", "no drop shadow",
 ].join(", ");
+
+/* Said before the palette, because the negative list at the end is the last
+   thing read and a model needs to be told what the panel is as well as what it
+   is not. Continuous treatment across the whole square is the shape of the
+   thing: whatever it draws has to survive being cut into a body, a yoke, two
+   sleeves and a collar, and a composition with a middle to it does not. */
+const BACKGROUND =
+  "This is background treatment only: continuous pattern, stripes, bands, " +
+  "texture or an allover scene, running unbroken across the entire square. " +
+  "It has no focal point and no centerpiece. Nothing is placed in the middle " +
+  "of the panel: no emblem, badge, medallion, shield, roundel, crest or " +
+  "centered logo mark of any kind, and no lettering. The team's crest is " +
+  "added afterwards as a separate layer and must not appear in this artwork.";
 
 /* Optional, and a nudge rather than a guarantee — models follow it
    inconsistently. The masks put the shoulder yoke in the top quarter or so and
@@ -122,6 +150,7 @@ export function buildPrompt(i: ConceptInput): string {
   return [
     "Flat artwork panel for a sublimated hockey jersey. Square 1:1 composition.",
     `Full-bleed illustrated scene, edge to edge. Subject: ${i.theme}.`,
+    BACKGROUND,
     `Color palette limited strictly to: ${i.palette.join(", ")}.`,
     i.style ?? STYLE_DEFAULT,
     "Composition symmetric about the vertical center line.",
@@ -321,6 +350,7 @@ export async function POST(request: Request): Promise<Response> {
     theme,
     "Everything else must stay exactly as it is — the same composition, the same colors and the same treatment wherever the requested change does not touch them.",
     "Keep it a flat 2D artwork panel, square, full bleed to all four edges, symmetric about the vertical center line.",
+    BACKGROUND,
     `Color palette limited strictly to: ${palette.join(", ")}.`,
     NEGATIVE,
   ].join(" ");

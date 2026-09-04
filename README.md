@@ -28,8 +28,13 @@ has no backend at all.
 **`/mockup/` — the mockup compositor.** Takes a flat artwork panel and renders
 it onto a real jersey: a fixed 3D render in `public/mockup/front/`, clipped
 through four region masks with the render's own shading laid back over the top.
-Single file, no build, no dependencies, no backend — drop the folder on Netlify
-and it works. `public/mockup/front/README.md` covers the assets.
+No build, no dependencies, no backend. `public/mockup/front/README.md` covers
+the assets.
+
+The render itself is `mockup/render.js`, and both halves import it. The order
+page shows a customer the same jersey the compositor does, off the same code —
+two copies of this would drift, and drift would show up as two different
+garments.
 
 That inverts what the generator is for. It used to be asked for "a hockey
 jersey" and returned a different garment every time; now the garment is fixed
@@ -38,7 +43,11 @@ match — square, full bleed, no garment, no folds, no shadows, no type.
 
 ## What's wired
 
-- **Design** — prompt + idea chips + logo upload. Posts to `/api/generate-concept`.
+- **Design** — prompt + idea chips + logo upload. Posts to `/api/generate-concept`,
+  and renders the panel that comes back onto the garment.
+- **Crest** — its own layer, laid on after the render at a measured chest
+  position: the uploaded logo untouched, or the team name set as a wordmark,
+  outlined against whatever it lands on. Never drawn into the artwork.
 - **Colours** — factory colour card, multi-select. Passed into the prompt as the
   panel's palette, capped at five: past that a model treats the list as a
   suggestion.
@@ -53,12 +62,16 @@ match — square, full bleed, no garment, no folds, no shadows, no type.
 
 ## What isn't
 
-- **The two halves are not joined.** The order page still expects a photograph
-  of a jersey back from `/api/generate-concept` and composites the customer's
-  crest onto it by finding the garment in the pixels. It now gets a flat
-  artwork panel instead, which that code cannot read. Either the page grows the
-  compositor's render step, or it points at `/mockup/`. Deciding which is the
-  next real piece of work.
+- **The wordmark is a placeholder.** A customer without a logo gets their team
+  name set in bold italic, fitted to the chest and outlined for contrast. It is
+  legible on any artwork and it is not a crest. Real ones are drawn, arced,
+  layered — this is one line of canvas text standing in for that.
+- **A shared design refines from its mockup.** Opening a saved design by code
+  puts the finished jersey in both `src` and `raw`, so refining it sends the
+  model a picture of a garment — the one thing the pipeline exists to stop. The
+  panel needs saving alongside the mockup for that path to work.
+- **Only the front.** `Base.png` is a front view. The back needs its own asset
+  set, its own masks and its own measured constants.
 - **Checkout.** Button logs the order payload to the console. Point it at
   Stripe Checkout or a Shopify draft order.
 - **Accounts.** Fields collect, nothing persists. Needs a backend.
