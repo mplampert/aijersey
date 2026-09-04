@@ -47,9 +47,15 @@ const FIELD = {
 const STYLE_OPTIONS = ["Laced collar", "V-neck", "Crew"];
 const STATUS_ON_SAVE = "Concept";
 
-// Kit items is a multiple select, and the patch below sends typecast, which
-// would invent an option for anything the base doesn't already offer. These
-// three are what it offers, so anything else is dropped here instead.
+/* Kit items (fldsqik6ZInUTnwKM) is a multiple select, and the patch below sends
+   typecast, which would invent an option for anything the base doesn't already
+   offer. These three are what it offers, and they match CFG.kit on the page.
+
+   The base also has a second multiple select called Kit (fldfrtitFh7Xb4van)
+   with different options — Matching socks, Pant shells, Practice jerseys,
+   Player bags — that nothing writes to and that has no data in any of the 113
+   records. It is a leftover. Delete it in Airtable rather than leaving two
+   fields for one purpose; this file has never referred to it. */
 const KIT_OPTIONS = ["Socks", "Skate soakers", "Player bags"];
 
 // Uppercase, with the glyphs people misread removed: no I or 1, no O or 0.
@@ -62,11 +68,19 @@ function makeCode(): string {
   return Array.from(bytes, (n) => ALPHABET[n % ALPHABET.length]).join("");
 }
 
+// filterByFormula matches on the field's name, not its id, and Code is the
+// primary field. Same lookup get-design uses.
+const CODE_FIELD_NAME = "Code";
+const CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
+
 type Body = {
-  // An address arriving with a recordId attaches to that design instead of
-  // filing a new one — by the time the customer asks for a copy, the design
-  // is already on record with a code.
+  /* Either identifier reaches the same row. recordId is the one the page is
+     handed when a design is filed; code is the one the customer can read off
+     their own screen, which is the one that survives a reload, a shared link,
+     and a page that lost its record id — and every design that has a code has
+     a row, because the code is minted when the row is written. */
   recordId?: string;
+  code?: string;
   email?: string;
   session?: string;
   prompt?: string;
@@ -132,6 +146,60 @@ const rosterText = (roster: Body["roster"]) =>
     .slice(0, ROSTER_LIMIT);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/* Which step of a save went wrong, and what the service said about it.
+ *
+ * A save crosses two services — the blob store, then Airtable — and until now
+ * every way of failing arrived at one catch and one line reading "save-design
+ * failed" with a raw error object after it. Blob refusing the write, Airtable
+ * refusing a field id, and the whole thing being unconfigured were
+ * indistinguishable from the outside, and the page threw the response away
+ * without reading it, so nothing reached any console at all. */
+type Step = "config" | "blob:concept" | "blob:logo" | "airtable:create" | "airtable:patch" | "airtable:read";
+export type Snag = { step: Step; status: number | null; code: string | null; message: string };
+
+/** Airtable answers with { error: { type, message } }; blob and fetch do not. */
+async function readSnag(step: Step, res: Response): Promise<Snag> {
+  const body = await res.text().catch(() => "");
+  let code: string | null = null;
+  let message = body.slice(0, 400);
+  try {
+    const parsed = JSON.parse(body);
+    const e = parsed?.error;
+    if (typeof e === "string") { code = e; }
+    else if (e) { code = e.type ?? null; message = e.message ?? message; }
+  } catch {
+    // Not JSON — an HTML error page or a proxy's plain text.
+  }
+  return { step, status: res.status, code, message: message.replace(/\s+/g, " ").trim() };
+}
+
+function snagFrom(step: Step, err: unknown): Snag {
+  const e = err as any;
+  return {
+    step,
+    status: typeof e?.status === "number" ? e.status : null,
+    // @vercel/blob throws BlobAccessError and friends; the name is the useful bit.
+    code: typeof e?.name === "string" && e.name !== "Error" ? e.name : null,
+    message: String(e?.message ?? err).replace(/\s+/g, " ").trim().slice(0, 400),
+  };
+}
+
+/** One line per failure, the same shape generate-concept logs. */
+function report(snag: Snag, ms: number, note = "") {
+  console.error(
+    [
+      `save-design FAIL ${snag.step}`,
+      `status=${snag.status ?? "-"}`,
+      `${(ms / 1000).toFixed(1)}s`,
+      snag.code ? `code=${snag.code}` : "",
+      note,
+      `:: ${snag.message}`,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
 
 /**
  * Airtable fetches attachment URLs itself, a moment after the record is
@@ -210,8 +278,14 @@ function normalPhone(value: string): string | null {
 function unconfigured(keys: string[]): Response | null {
   const missing = keys.filter((k) => !process.env[k]);
   if (!missing.length) return null;
-  console.error("save-design not configured, missing:", missing.join(", "));
-  return Response.json({ error: "Design saving isn't configured" }, { status: 503 });
+  const snag: Snag = {
+    step: "config",
+    status: 503,
+    code: "missing-env",
+    message: `not set: ${missing.join(", ")}`,
+  };
+  report(snag, 0);
+  return Response.json({ error: "Design saving isn't configured", detail: snag }, { status: 503 });
 }
 
 const table = () =>
@@ -223,12 +297,35 @@ const airtableHeaders = () => ({
 });
 
 /**
- * Updates a design already on file. Patches that one record — the design was
- * saved the moment it was drawn, so creating a second row here would just
- * split one design across two.
+ * Finds the row a four-character code belongs to. Returns null when there is no
+ * such row, which is a real answer and not an error: a code the page is holding
+ * from a design that was never filed has nothing to attach to.
+ */
+async function findByCode(code: string): Promise<{ id: string | null; snag: Snag | null }> {
+  const began = Date.now();
+  // The code is matched against CODE before it gets here, so only the 32 safe
+  // glyphs ever reach the formula — there is nothing to quote-escape out of.
+  const query = new URLSearchParams({
+    filterByFormula: `{${CODE_FIELD_NAME}}="${code}"`,
+    maxRecords: "1",
+  });
+  const res = await fetch(`${table()}?${query}`, { headers: airtableHeaders() });
+  if (!res.ok) {
+    const snag = await readSnag("airtable:read", res);
+    report(snag, Date.now() - began, `code=${code}`);
+    return { id: null, snag };
+  }
+  const found = await res.json().catch(() => null);
+  return { id: found?.records?.[0]?.id ?? null, snag: null };
+}
+
+/**
+ * Updates a design already on file. Patches that one row — the design was saved
+ * the moment it was drawn, so creating a second row here would split one design
+ * across two, which is how Email and Team end up on a record nobody looks at.
  */
 async function updateRecord(
-  recordId: string,
+  who: { recordId?: string; code?: string },
   fields: Record<string, unknown>,
 ): Promise<Response> {
   const notReady = unconfigured([
@@ -238,7 +335,51 @@ async function updateRecord(
   ]);
   if (notReady) return notReady;
 
+  const began = Date.now();
   try {
+    /* Prefer the record id when the page still has one, and fall back to the
+       code. The code is what the customer can see, so it is the identifier that
+       survives a reload or a shared link — and a page that lost its record id
+       is exactly the case that used to fail with nothing written down. */
+    let recordId = who.recordId ?? null;
+    if (!recordId && who.code) {
+      const { id, snag } = await findByCode(who.code);
+      if (snag) {
+        return Response.json(
+          { error: "We couldn't reach the design file just now", detail: snag },
+          { status: 502 },
+        );
+      }
+      if (!id) {
+        const missing: Snag = {
+          step: "airtable:read",
+          status: 404,
+          code: "no-such-code",
+          message: `no design on file with code ${who.code}`,
+        };
+        report(missing, Date.now() - began);
+        return Response.json(
+          { error: `We couldn't find design ${who.code} on file.`, detail: missing },
+          { status: 404 },
+        );
+      }
+      recordId = id;
+      console.log(`save-design: matched code ${who.code} to ${recordId}`);
+    }
+    if (!recordId) {
+      const missing: Snag = {
+        step: "airtable:patch",
+        status: 400,
+        code: "no-identifier",
+        message: "neither a record id nor a code was sent",
+      };
+      report(missing, 0);
+      return Response.json(
+        { error: "That design isn't on file yet, so there's nothing to attach to it.", detail: missing },
+        { status: 400 },
+      );
+    }
+
     const res = await fetch(`${table()}/${encodeURIComponent(recordId)}`, {
       method: "PATCH",
       headers: airtableHeaders(),
@@ -247,9 +388,17 @@ async function updateRecord(
     });
 
     if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      throw new Error(`Airtable ${res.status}: ${detail.slice(0, 300)}`);
+      const snag = await readSnag("airtable:patch", res);
+      report(snag, Date.now() - began, `record=${recordId} fields=${Object.keys(fields).join("|")}`);
+      return Response.json(
+        { error: "We couldn't save that against your design", detail: snag },
+        { status: 502 },
+      );
     }
+    console.log(
+      `save-design OK patch ${recordId} ${((Date.now() - began) / 1000).toFixed(1)}s ` +
+      `fields=${Object.keys(fields).join("|")}`,
+    );
 
     // TODO: send the customer their copy. The design and the code are already
     // on record, so this only needs the transactional mail — attach or link
@@ -259,9 +408,10 @@ async function updateRecord(
 
     return Response.json({ ok: true });
   } catch (err) {
-    console.error("save-design: updating the record failed", { recordId, err });
+    const snag = snagFrom("airtable:patch", err);
+    report(snag, Date.now() - began, `record=${who.recordId ?? "-"} code=${who.code ?? "-"}`);
     return Response.json(
-      { error: "We couldn't save that against your design" },
+      { error: "We couldn't save that against your design", detail: snag },
       { status: 502 },
     );
   }
@@ -275,9 +425,15 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Body must be JSON" }, { status: 400 });
   }
 
-  // An address or a palette arriving with a recordId belongs to a design
-  // already on file, so it patches that row rather than opening a new one.
-  if (body.email !== undefined || body.recordId) {
+  /* An address or a palette arriving with an identifier belongs to a design
+     already on file, so it patches that row rather than opening a new one.
+     Logged before anything else, because "nothing to attach your address to"
+     is answered by knowing what the page actually had in hand. */
+  if (body.email !== undefined || body.recordId || body.code) {
+    console.log(
+      `save-design PATCH recordId=${body.recordId ?? "-"} code=${body.code ?? "-"} ` +
+      `fields=${Object.keys(body).filter((k) => k !== "recordId" && k !== "code").join("|") || "-"}`,
+    );
     const fields: Record<string, unknown> = {};
 
     if (body.email !== undefined) {
@@ -329,16 +485,27 @@ export async function POST(request: Request): Promise<Response> {
       if (team) fields[FIELD.team] = team.slice(0, 200);
     }
 
-    if (!body.recordId) {
+    const code = (body.code || "").trim().toUpperCase();
+    if (code && !CODE.test(code)) {
+      return Response.json({ error: "That design code doesn't look right." }, { status: 400 });
+    }
+    if (!body.recordId && !code) {
+      const missing: Snag = {
+        step: "airtable:patch",
+        status: 400,
+        code: "no-identifier",
+        message: "the page sent neither a record id nor a design code",
+      };
+      report(missing, 0);
       return Response.json(
-        { error: "That design isn't on file yet, so there's nothing to attach to it." },
+        { error: "That design isn't on file yet, so there's nothing to attach to it.", detail: missing },
         { status: 400 },
       );
     }
     if (!Object.keys(fields).length) {
       return Response.json({ error: "Nothing to update" }, { status: 400 });
     }
-    return updateRecord(body.recordId, fields);
+    return updateRecord({ recordId: body.recordId, code: code || undefined }, fields);
   }
 
   if (!body.image) {

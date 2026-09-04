@@ -1364,14 +1364,19 @@ function addVersion(image,label,select,raw){
   else drawVersions();
   $('#refine').hidden=false;
   $('#capture').hidden=false;
-  saveDesign(v.src,versionName(v,S.versions.length-1),d=>{v.code=d.code;v.recordId=d.id||null;renderCode();});
+  /* Kept on the version so the capture step can wait for it. Filing uploads a
+     megabyte or two and then waits for the blob to serve, which takes seconds —
+     and the address box is on screen the whole time, so somebody who types
+     quickly used to reach the save before the design had a code. */
+  v.filing=saveDesign(v.src,versionName(v,S.versions.length-1),d=>{v.code=d.code;v.recordId=d.id||null;renderCode();});
 }
 /* Files every design as it is drawn, so a customer who loses theirs can quote
    the code back to us. Fire and forget: a save that fails costs the code, never
    the concept, which is already on screen. */
 function saveDesign(image,variant,onSaved){
   const collar=(CFG.styles.find(x=>x.id===S.style)||{}).name||S.style;
-  fetch(CFG.saveEndpoint,{
+  const began=Date.now();
+  return fetch(CFG.saveEndpoint,{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
       session:S.session,
@@ -1383,9 +1388,25 @@ function saveDesign(image,variant,onSaved){
       logo:S.logo?S.logo.data:null
     })
   })
-    .then(r=>r.ok?r.json():null)
+    .then(async r=>{
+      const took=((Date.now()-began)/1000).toFixed(1);
+      const d=await r.json().catch(()=>null);
+      if(!r.ok){
+        /* This used to be `r.ok?r.json():null` followed by an empty catch, so a
+           design that was never filed failed in total silence and only showed
+           up much later as "nothing to attach your address to". */
+        const s=d&&d.detail;
+        console.error('file design FAILED http='+r.status+' '+took+'s '
+          +(s?s.step+' status='+(s.status??'-')+(s.code?' code='+s.code:'')+' ':'')
+          +':: '+((s&&s.message)||(d&&d.error)||'no detail returned'));
+        return null;
+      }
+      console.log('file design ok '+took+'s code='+(d&&d.code)+' record='+((d&&d.id)||'NONE'));
+      if(d&&!d.id) console.warn('file design: no record id came back, so saving an address will have to match on the code');
+      return d;
+    })
     .then(d=>{ if(d&&d.code&&onSaved) onSaved(d); })
-    .catch(()=>{});
+    .catch(err=>{ console.error('file design FAILED: could not reach the server ::',err&&err.message); });
 }
 /* Colors are picked before generating now, but they can still be changed
    afterwards — so whenever the palette moves, push it to the records already
@@ -1680,16 +1701,38 @@ $('#saveBtn').onclick=async()=>{
   }
   btn.disabled=true;btn.textContent='Saving…';
   try{
-    if(!v.recordId) throw new Error('We couldn\'t file this design, so there\'s nothing to attach your address to. Generate it again and we\'ll pick it up.');
+    /* Either identifier will do, and the code is the one that survives a
+       reload, a shared link, and a record id the page never got — which is what
+       this used to refuse outright, before it had even asked the server. */
+    /* Filing may still be in flight — it uploads the image and waits for the
+       blob to serve. Wait for it rather than refusing: this is the whole of
+       "nothing to attach your address to" for anyone who types quickly. */
+    if(!v.recordId&&!v.code&&v.filing){
+      btn.textContent='Filing the design…';
+      await Promise.race([v.filing,new Promise(r=>setTimeout(r,20000))]);
+    }
+    if(!v.recordId&&!v.code) throw new Error('This design couldn\'t be filed, so there\'s nothing to attach your address to. The console has the reason.');
+    const team=$('#teamName').value.trim();
+    const payload={email};
+    if(v.recordId) payload.recordId=v.recordId;
+    if(v.code) payload.code=v.code;
+    if(phone) payload.phone=phone;
+    if(team) payload.team=team;
+    console.log('save address: record='+(v.recordId||'NONE')+' code='+(v.code||'NONE')
+      +' fields='+Object.keys(payload).join('|'));
     const res=await fetch(CFG.saveEndpoint,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(phone?{recordId:v.recordId,email,phone}:{recordId:v.recordId,email})
+      body:JSON.stringify(payload)
     }).catch(()=>{
       throw new Error('We couldn\'t reach the server — check your connection and try again.');
     });
     if(!res.ok){
-      const why=await res.json().then(d=>d&&d.error,()=>null);
-      throw new Error(why||'We couldn\'t save that just now — try again in a moment.');
+      const d=await res.json().catch(()=>null);
+      const s=d&&d.detail;
+      console.error('save address FAILED http='+res.status+' '
+        +(s?s.step+' status='+(s.status??'-')+(s.code?' code='+s.code:'')+' ':'')
+        +':: '+((s&&s.message)||(d&&d.error)||'no detail returned'));
+      throw new Error((d&&d.error)||'We couldn\'t save that just now — try again in a moment.');
     }
     // Nothing is emailed yet, so this says only what actually happened.
     msg.className='saved ok';
