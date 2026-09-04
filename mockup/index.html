@@ -154,8 +154,8 @@ button.ghost:hover{border-color:var(--dim)}
 
     <div class="grp">
       <h2>Shading</h2>
-      <label for="contrast">Contrast <span class="val" id="contrastVal">1.00</span></label>
-      <input type="range" id="contrast" min="0.6" max="1.6" step="0.02" value="1">
+      <label for="contrast">Contrast <span class="val" id="contrastVal">1.25</span></label>
+      <input type="range" id="contrast" min="0.6" max="1.6" step="0.01" value="1.25">
       <label>Blend</label>
       <div class="seg" id="blend" role="group" aria-label="Blend mode">
         <button type="button" data-v="overlay" aria-pressed="true">Overlay</button>
@@ -449,7 +449,7 @@ $('#reset').onclick = ()=>{
   drop.classList.remove('has');
   drop.textContent = 'Drop a flat artwork PNG here, or tap to choose';
   file.value = '';
-  contrast.value = 1; $('#contrastVal').textContent = '1.00';
+  contrast.value = S.contrast; $('#contrastVal').textContent = S.contrast.toFixed(2);
   $('#frame').className = 'frame checker';
   document.querySelectorAll('.seg').forEach(box=>{
     const cur = box.id==='mode' ? 'unified' : box.id==='blend' ? 'overlay' : 'checker';

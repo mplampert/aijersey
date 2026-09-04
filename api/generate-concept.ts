@@ -77,6 +77,8 @@ const STYLE_DEFAULT =
  * for is what stops it; "no logo" alone did not. */
 const NEGATIVE = [
   "no jersey", "no shirt", "no garment", "no clothing", "no fabric",
+  "no jersey silhouette", "no garment shape", "no collar", "no neckline",
+  "no sleeves", "no cuffs", "no hem", "no seams", "no stitching",
   "no folds", "no wrinkles", "no shadows", "no highlights", "no lighting",
   "no 3d render", "no mockup", "no hanger", "no mannequin", "no person",
   "no text", "no letters", "no words", "no lettering", "no typography",
@@ -93,7 +95,11 @@ const NEGATIVE = [
    thing: whatever it draws has to survive being cut into a body, a yoke, two
    sleeves and a collar, and a composition with a middle to it does not. */
 const BACKGROUND =
-  "This is background treatment only: continuous pattern, stripes, bands, " +
+  "This is surface art only — the flat panel that gets printed onto the " +
+  "fabric, not a picture of the finished garment. Do not draw a jersey, a " +
+  "jersey silhouette, a collar, a neckline, sleeves, cuffs, a hem or any seam. " +
+  "There is no garment in this image at all. " +
+  "It is background treatment: continuous pattern, stripes, bands, " +
   "texture or an allover scene, running unbroken across the entire square. " +
   "It has no focal point and no centerpiece. Nothing is placed in the middle " +
   "of the panel: no emblem, badge, medallion, shield, roundel, crest or " +

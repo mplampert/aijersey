@@ -76,7 +76,11 @@ export function newSpec(){
     mode:'unified',      // 'unified' | 'region'
     art:null,            // the master artwork image
     xf:newTransform(),
-    contrast:1,          // 0.6 - 1.6
+    /* 1.25, not 1. At 1 the render's own contrast comes through unchanged and
+       flat artwork sits on it looking painted on; a quarter more is what makes
+       the folds and the seam shadows read as fabric under the print. The range
+       the slider offers is 0.6 to 1.6. */
+    contrast:1.25,
     blend:'overlay',     // 'overlay' | 'soft-light'
     regions:Object.fromEntries(ORDER.map(k=>
       [k,{src:DEFAULTS[k].src, color:DEFAULTS[k].color, img:null, xf:newTransform()}])),
@@ -198,7 +202,7 @@ class Garment {
     this.shadeCtx = this.shade.getContext('2d');
     this.shadeImg = this.shadeCtx.createImageData(CANVAS,CANVAS);
     this.contrast = null;
-    this.setContrast(1);
+    this.setContrast(1.25);
   }
 
   /* The shading layer: the render recentred on 128 so overlay and soft-light,
@@ -279,7 +283,7 @@ class Garment {
    * keep it past the next render.
    */
   render(spec){
-    this.setContrast(spec.contrast ?? 1);
+    this.setContrast(spec.contrast ?? 1.25);
     const c = this.ctx;
     c.setTransform(1,0,0,1,0,0);
     c.globalCompositeOperation = 'source-over';
