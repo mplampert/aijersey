@@ -86,16 +86,22 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   /* What Stripe says was actually paid, against what the order said it cost.
-     They should agree — the session was priced from the record — and a
-     disagreement means the roster changed under a live payment link, which is
-     worth a line in the log rather than silence. */
+     A promotion code makes those differ on purpose, so the discount is added
+     back before they are compared — otherwise every discounted order would
+     report itself as a discrepancy and the warning would mean nothing. What is
+     left over after that is a real one: the roster changed while a checkout was
+     open, and somebody paid for a different order than the one on the record. */
   const on = await readFields(recordId);
   const expected = Math.round(Number(on?.[FIELD.orderTotal] ?? 0) * 100);
   const paid = Number(session.amount_total ?? 0);
-  if (expected && paid !== expected) {
+  const discount = Number(session.total_details?.amount_discount ?? 0);
+  if (discount) {
+    console.log(`stripe-webhook: ${code} used a promotion code worth ${discount} cents`);
+  }
+  if (expected && paid + discount !== expected) {
     console.warn(
-      `stripe-webhook: ${code} paid ${paid} cents against an order of ${expected} cents — ` +
-      `the order changed after the link went out`,
+      `stripe-webhook: ${code} paid ${paid} cents (discount ${discount}) against an order of ` +
+      `${expected} cents — the order changed after checkout was opened`,
     );
   }
 

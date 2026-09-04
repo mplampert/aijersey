@@ -99,6 +99,10 @@ export type Session = {
   payment_status: "paid" | "unpaid" | "no_payment_required";
   amount_total: number | null;
   expires_at: number;
+  /* Present once something has been discounted. amount_discount is what a
+     promotion code took off, which is the difference between what was quoted
+     and what was charged — see the check in stripe-webhook. */
+  total_details?: { amount_discount?: number } | null;
 };
 
 export type Order = {
@@ -147,6 +151,14 @@ export async function createSession(order: Order): Promise<StripeReply<Session>>
     "metadata[design_code]": order.code,
     "payment_intent_data[description]":
       `Jerseys ${order.code}${order.team ? ` — ${order.team}` : ""}`,
+    /* Puts the "Add promotion code" box on Stripe's page. The codes themselves
+       live in the Stripe dashboard, so a season discount is created there and
+       needs no deploy here.
+
+       Mutually exclusive with `discounts`, which is why nothing on this session
+       applies one directly: a code the customer types and a coupon we attach
+       cannot both be in play, and letting them type it is the point. */
+    allow_promotion_codes: "true",
   });
   if (order.team) form.set("metadata[team]", order.team.slice(0, 500));
 

@@ -404,6 +404,17 @@ somebody ends up with 40 jerseys they were charged for 12 of.
 **Status is left alone here.** `Ordered` means paid for, and only the webhook
 says it.
 
+**Promotion codes are on** (`allow_promotion_codes`), so Stripe's page carries an
+"Add promotion code" box. The codes live in the Stripe dashboard — a season
+discount is created there and needs no deploy here. Nothing attaches a `discounts`
+array to the session, because the two are mutually exclusive and letting the
+customer type a code is the point.
+
+A discounted order pays less than it was quoted, on purpose. **Order total** ends
+up as what was actually charged, and the webhook adds the discount back before
+comparing the two — otherwise every discounted order would report itself as a
+discrepancy and the warning would stop meaning anything.
+
 ### Getting told it was paid
 
 `api/stripe-webhook.ts`. The customer pays on Stripe's page, so nothing that
