@@ -1,12 +1,13 @@
 // Compiled output is .js, and the runtime resolves this specifier verbatim.
-import { findByEmail } from "./save-design.js";
+import { findByEmail, galleryFor, galleryUrl, patchGallery } from "./save-design.js";
 import { sendDesign } from "./send-design.js";
 
 /**
  * POST /api/email-designs
  *
  * The way back in when the code is gone. A customer types the address they
- * saved with and every design filed under it is emailed to them.
+ * saved with and is emailed a link to their gallery — every design filed under
+ * that address, in one place.
  *
  * Until this existed the four-character code was the only route to a design.
  * Nothing read the Email column at all — it was written and never looked at, so
@@ -30,7 +31,7 @@ const EMAIL = /^[^\s@"'\\]+@[^\s@"'\\]+\.[^\s@"'\\]{2,}$/;
 /* Said whether or not anything was found. */
 const SENT = {
   ok: true,
-  message: "If we have designs saved under that address, they're on their way.",
+  message: "If we have designs saved under that address, a link to them is on its way.",
 };
 
 export async function POST(request: Request): Promise<Response> {
@@ -69,10 +70,22 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(SENT);
   }
 
+  /* A customer who saved before galleries existed has designs and no token.
+     Mint one and stamp it across everything of theirs, so the link this mail
+     carries opens all of it rather than nothing. */
+  let token = await galleryFor(email);
+  if (!token) {
+    token = await patchGallery(designs.map((d) => d.id));
+    console.log(`email-designs: minted gallery ${token} for ${email}`);
+  }
+
+  const latest = designs[0];
   const sent = await sendDesign({
     to: email,
-    designs: designs.map((d) => ({ code: d.code, imageUrl: d.imageUrl })),
-    origin: request.headers.get("origin"),
+    gallery: galleryUrl(token, request.headers.get("origin")),
+    code: latest.code,
+    imageUrl: latest.imageUrl,
+    count: designs.length,
     reason: "lookup",
   });
 

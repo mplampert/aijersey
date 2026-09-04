@@ -41,6 +41,7 @@ const FIELD = {
   roster: "fldySSOUbQIBBObQQ",
   rosterCount: "fldXNT5mBgEYudtYW",
   team: "fldaEQKn1znas35Rt",
+  gallery: "fldoNMDzarxLKYkwB",
 } as const;
 
 // Style and Status are single selects. typecast lets Airtable match a plain
@@ -70,11 +71,23 @@ function makeCode(): string {
   return Array.from(bytes, (n) => ALPHABET[n % ALPHABET.length]).join("");
 }
 
+/* The gallery id, which is not the code and is not meant to be read out loud.
+ *
+ * It has to be unguessable, because the whole point of it is that the URL is not
+ * the email address: /designs?t=<address> would let anyone type in somebody's
+ * address and read their designs. 128 random bits, base64url, same unlisted-link
+ * model as Share id on the Proofs table.
+ */
+function makeGalleryId(): string {
+  return Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64url");
+}
+
 // filterByFormula matches on the field's name, not its id, and Code is the
 // primary field. Same lookup get-design uses.
 const CODE_FIELD_NAME = "Code";
 const SESSION_FIELD_NAME = "Session";
 const EMAIL_FIELD_NAME = "Email";
+const GALLERY_FIELD_NAME = "Gallery id";
 const CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
 
 type Body = {
@@ -323,7 +336,15 @@ async function findByCode(code: string): Promise<{ id: string | null; snag: Snag
   return { id: found?.records?.[0]?.id ?? null, snag: null };
 }
 
-export type Filed = { id: string; code: string; imageUrl: string | null; session: string | null };
+export type Filed = {
+  id: string;
+  code: string;
+  imageUrl: string | null;
+  session: string | null;
+  gallery: string | null;
+  created: string | null;
+  variant: string | null;
+};
 
 const asFiled = (rec: any): Filed | null => {
   const code = rec?.fields?.[FIELD.code];
@@ -341,6 +362,9 @@ const asFiled = (rec: any): Filed | null => {
        fetched at send time rather than linked. */
     imageUrl: file?.thumbnails?.large?.url ?? file?.url ?? null,
     session: rec.fields[FIELD.session] ?? null,
+    gallery: rec.fields[FIELD.gallery] ?? null,
+    created: rec.fields[FIELD.created] ?? rec.createdTime ?? null,
+    variant: rec.fields[FIELD.variant] ?? null,
   };
 };
 
@@ -421,6 +445,48 @@ export async function findByEmail(email: string): Promise<Filed[]> {
     return (found?.records ?? []).map(asFiled).filter(Boolean) as Filed[];
   } catch (err) {
     report(snagFrom("airtable:read", err), 0, "lookup by email");
+    return [];
+  }
+}
+
+/**
+ * The gallery id already in use for an address, or null if it has never been
+ * given one. Reused rather than reminted, so a customer's link keeps working
+ * and every design they save lands in the same gallery.
+ */
+export async function galleryFor(email: string): Promise<string | null> {
+  const found = await findByEmail(email);
+  return found.find((d) => d.gallery)?.gallery ?? null;
+}
+
+/** Mints a gallery id and writes it across the rows given. Returns the id. */
+export async function patchGallery(ids: string[]): Promise<string> {
+  const token = makeGalleryId();
+  await patchMany(ids, { [FIELD.gallery]: token });
+  return token;
+}
+
+/** Every design behind one gallery id. This is what the gallery page reads. */
+export async function readGallery(token: string): Promise<Filed[]> {
+  try {
+    const query = new URLSearchParams({
+      // Base64url, so letters, digits, hyphen and underscore — nothing that
+      // means anything inside an Airtable formula. Stripped anyway.
+      filterByFormula: `{${GALLERY_FIELD_NAME}}="${token.replace(/[^A-Za-z0-9_-]/g, "")}"`,
+      returnFieldsByFieldId: "true",
+      maxRecords: "60",
+      "sort[0][field]": FIELD.created,
+      "sort[0][direction]": "desc",
+    });
+    const res = await fetch(`${table()}?${query}`, { headers: airtableHeaders() });
+    if (!res.ok) {
+      report(await readSnag("airtable:read", res), 0, "gallery");
+      return [];
+    }
+    const found = await res.json();
+    return (found?.records ?? []).map(asFiled).filter(Boolean) as Filed[];
+  } catch (err) {
+    report(snagFrom("airtable:read", err), 0, "gallery");
     return [];
   }
 }
@@ -548,31 +614,49 @@ async function updateRecord(
        costs an email and nothing else. The page is told whether it went so it
        can say what actually happened rather than promising mail. */
     let emailed = false;
+    let gallery: string | null = null;
     if (mail) {
       const saved = await readDesign(recordId);
-      /* Everything from the same visit, because all of it is theirs. The one
-         they had on screen is only the one they happened to be looking at. */
-      const session = saved?.session ?? null;
-      const designs = session ? await readSession(session) : saved ? [saved] : [];
-      const rest = designs.filter((d) => d.id !== recordId).map((d) => d.id);
-      if (rest.length) {
-        const also = await patchMany(rest, { [FIELD.email]: mail.email });
-        console.log(`save-design: address written to ${also + 1} designs in session ${session}`);
-      }
 
-      if (!designs.length) {
+      /* One gallery per address, for as long as the address exists. Minted the
+         first time and reused after, so a link that has been emailed once keeps
+         working and everything later joins the same gallery. */
+      const token = (await galleryFor(mail.email)) ?? makeGalleryId();
+
+      /* Stamped across the whole visit, not just the design that was on screen.
+         A customer generates three takes and saves one; all three are theirs and
+         all three belong in the gallery. Anything generated before the address
+         was typed in an earlier visit has no address on it and stays out — the
+         gallery starts here and fills up from here. */
+      const session = saved?.session ?? null;
+      const mine = session ? await readSession(session) : saved ? [saved] : [];
+      const stamped = await patchMany(mine.map((d) => d.id), {
+        [FIELD.email]: mail.email,
+        [FIELD.gallery]: token,
+      });
+      console.log(
+        `save-design: gallery ${token} now covers ${stamped} design(s) from session ${session}`,
+      );
+
+      const all = await readGallery(token);
+      const shown = all.find((d) => d.id === recordId) ?? saved ?? all[0] ?? null;
+      gallery = galleryUrl(token, mail.origin);
+
+      if (!shown) {
         console.error(`save-design: nothing readable on ${recordId}, cannot send a copy`);
       } else {
         const sent = await sendDesign({
           to: mail.email,
-          designs: designs.map((d) => ({ code: d.code, imageUrl: d.imageUrl })),
-          origin: mail.origin,
+          gallery,
+          code: shown.code,
+          imageUrl: shown.imageUrl,
+          count: all.length || 1,
           reason: "saved",
         });
         emailed = sent.ok;
       }
     }
-    return Response.json({ ok: true, emailed });
+    return Response.json({ ok: true, emailed, gallery });
 
   } catch (err) {
     const snag = snagFrom("airtable:patch", err);
@@ -584,8 +668,14 @@ async function updateRecord(
   }
 }
 
-/* Where the reopen link should point. SITE_URL wins when it is set; this is
-   the fallback, and it is right unless a proxy rewrites the host. */
+/** The customer's gallery, by token. Never by address — see makeGalleryId. */
+export function galleryUrl(token: string, origin: string | null): string {
+  const base = (process.env.SITE_URL || origin || "").replace(/\/+$/, "");
+  return `${base}/designs/?t=${encodeURIComponent(token)}`;
+}
+
+/* Where a link should point. SITE_URL wins when it is set; this is the
+   fallback, and it is right unless a proxy rewrites the host. */
 function originOf(request: Request): string | null {
   const origin = request.headers.get("origin");
   if (origin) return origin;

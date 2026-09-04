@@ -612,7 +612,7 @@ footer{
         <div class="capture" id="capture" hidden>
           <label class="fld" for="saveEmail">Don&rsquo;t lose this design</label>
           <p class="note">There&rsquo;s no account to log back into. Leave your address and we&rsquo;ll
-            email you every design from this session &mdash; codes, pictures and links.</p>
+            email you a link to your own gallery &mdash; this design and everything else you save.</p>
           <input type="email" id="saveEmail" placeholder="you@yourteam.com" autocomplete="email">
           <label class="fld" for="savePhone">Phone <span class="opt">Optional</span></label>
           <p class="note">So we can text you when your proof is ready.</p>
@@ -626,8 +626,8 @@ footer{
               Saved a design here before?
             </button>
             <div id="recover" hidden>
-              <p class="note">Enter the address you saved with and we&rsquo;ll email you every design
-                on file for it, codes and all.</p>
+              <p class="note">Enter the address you saved with and we&rsquo;ll email you a link to
+                your gallery &mdash; every design on file for it.</p>
               <input type="email" id="recoverEmail" placeholder="you@yourteam.com" autocomplete="email">
               <button class="ghost" id="recoverGo">Email me my designs</button>
               <p class="saved" id="recoverMsg" hidden role="status"></p>
@@ -1735,7 +1735,7 @@ $('#recoverGo').onclick=async()=>{
        say which addresses are on file, and the person who owns the address
        finds out in their inbox either way. */
     msg.className='saved ok';
-    msg.textContent=(d&&d.message)||'If we have designs saved under that address, they\'re on their way.';
+    msg.textContent=(d&&d.message)||'If we have designs saved under that address, a link is on its way.';
   }catch(err){
     msg.className='saved bad';
     msg.textContent=err.message;
@@ -1801,11 +1801,19 @@ $('#saveBtn').onclick=async()=>{
        not coming is worse than not promising one. */
     const d=await res.json().catch(()=>null);
     msg.className='saved ok';
-    const n=S.versions.filter(x=>x.code).length;
     msg.textContent = d&&d.emailed
-      ? 'Sent to '+email+' — '+(n>1?'all '+n+' designs from this session, codes and all':'design code '+(v.code||''))
-        +'. Check your spam folder if it isn\'t there in a minute.'
+      ? 'Sent to '+email+' — a link to your gallery, with this design and everything else you save.'
+        +' Check your spam folder if it isn\'t there in a minute.'
       : 'Saved against design code '+(v.code||'')+'. Quote it any time — we\'ll be in touch at '+email+'.';
+    /* The link is in the mail, but somebody who just typed their address is
+       right here and can have it now. */
+    if(d&&d.gallery){
+      const a=document.createElement('a');
+      a.href=d.gallery;a.target='_blank';a.rel='noopener';
+      a.style.cssText='display:inline-block;margin-left:6px;color:var(--accent)';
+      a.textContent='Open your gallery';
+      msg.append(' ',a);
+    }
     if(d&&!d.emailed) console.warn('save address: saved, but no email went out — see the function log');
   }catch(err){
     msg.className='saved bad';

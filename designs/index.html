@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Your designs — Marty&rsquo;s</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5 2 3 4v3h2v7h6V7h2V4l-2-2-3 1z' fill='%23e4652a'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0b1220; --panel:#111c2f; --seam:#1e2c44; --seam-lo:#182338;
+  --ink:#eef3fa; --ice-2:#9fb0c9; --ice-3:#6e809b; --accent:#e4652a;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+a{color:inherit}
+header{border-bottom:1px solid var(--seam);padding:18px 20px}
+.wrap{max-width:1040px;margin:0 auto}
+.brand{margin:0;font-size:19px;font-weight:700;letter-spacing:.2px}
+.brand i{font-style:normal;color:var(--accent)}
+main{padding:26px 20px 60px}
+h1{font-size:23px;margin:0 0 6px;line-height:1.25}
+.sub{margin:0 0 24px;color:var(--ice-2);font-size:15px}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:16px}
+.card{
+  background:var(--panel);border:1px solid var(--seam);border-radius:12px;
+  overflow:hidden;display:flex;flex-direction:column;
+}
+.shot{
+  display:block;width:100%;aspect-ratio:3/2;object-fit:cover;
+  background:#0e1729;border-bottom:1px solid var(--seam-lo);
+}
+.meta{padding:13px 14px 14px;display:flex;flex-direction:column;gap:3px;flex:1}
+.code{font-size:20px;font-weight:700;letter-spacing:.13em}
+.when{color:var(--ice-3);font-size:13px}
+.what{color:var(--ice-2);font-size:13.5px}
+.open{
+  display:block;margin:12px 14px 14px;padding:10px;border-radius:8px;
+  background:var(--accent);color:#fff;text-decoration:none;text-align:center;
+  font-weight:600;font-size:14.5px;
+}
+.open:hover{filter:brightness(1.08)}
+
+.note{
+  margin:26px 0 0;padding:14px 16px;border:1px solid var(--seam);border-radius:10px;
+  color:var(--ice-2);font-size:13.5px;max-width:620px;
+}
+.msg{color:var(--ice-2);font-size:15.5px;max-width:560px}
+.msg b{color:var(--ink)}
+.cta{
+  display:inline-block;margin-top:16px;padding:11px 18px;border-radius:9px;
+  background:var(--accent);color:#fff;text-decoration:none;font-weight:600;
+}
+.skeleton{height:230px;border-radius:12px;background:var(--panel);border:1px solid var(--seam)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap"><p class="brand">Marty<i>&rsquo;</i>s</p></div>
+</header>
+
+<main class="wrap">
+  <h1 id="title">Your designs</h1>
+  <p class="sub" id="sub">Loading&hellip;</p>
+  <div class="grid" id="grid">
+    <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+  </div>
+  <p class="note" id="keep" hidden>
+    Keep this link — it&rsquo;s the way back to these designs. Anyone who has it can see them,
+    so treat it like a private link rather than a password.
+  </p>
+</main>
+
+<script>
+/* Every design saved under one customer's address.
+ *
+ * The token in the URL is the only thing that opens this. It is not the email
+ * address and cannot be worked out from one — /designs?t=someone@gmail.com
+ * would let anybody type an address and read another person's designs, which is
+ * exactly what the random id is here to prevent. Anyone holding the link can
+ * see the gallery, so it is unlisted rather than private, and it goes nowhere
+ * but that customer's own inbox.
+ */
+const $ = s => document.querySelector(s);
+const token = (new URLSearchParams(location.search).get('t') || '').trim();
+
+const when = iso => {
+  if(!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
+};
+
+function nothing(title, message){
+  $('#title').textContent = title;
+  $('#sub').hidden = true;
+  $('#grid').className = '';
+  $('#grid').innerHTML =
+    '<p class="msg">' + message + '</p>' +
+    '<p><a class="cta" href="/">Design a jersey</a></p>';
+}
+
+async function load(){
+  if(!token){
+    nothing('That link is incomplete',
+      'This page needs the full link from your email — the part after <b>?t=</b> is what finds your designs.');
+    return;
+  }
+  try{
+    const res = await fetch('/api/gallery?t=' + encodeURIComponent(token));
+    const d = await res.json().catch(()=>null);
+    if(!res.ok || !d || !Array.isArray(d.designs) || !d.designs.length){
+      nothing('We couldn’t open that gallery',
+        (d && d.error) || 'That link isn’t valid. Check it came through unbroken, or ask us for a new one.');
+      return;
+    }
+
+    const n = d.designs.length;
+    $('#sub').textContent = n === 1
+      ? 'One design saved. Open it to keep working on it.'
+      : n + ' designs saved, newest first. Open any of them to keep working on it.';
+    $('#keep').hidden = false;
+
+    $('#grid').innerHTML = '';
+    for(const design of d.designs){
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      if(design.image){
+        const img = document.createElement('img');
+        img.className = 'shot';
+        img.src = design.image;
+        img.alt = 'Jersey design ' + design.code;
+        img.loading = 'lazy';
+        card.append(img);
+      }else{
+        const gap = document.createElement('div');
+        gap.className = 'shot';
+        card.append(gap);
+      }
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const code = document.createElement('div');
+      code.className = 'code'; code.textContent = design.code;
+      meta.append(code);
+      if(design.variant){
+        const what = document.createElement('div');
+        what.className = 'what'; what.textContent = design.variant;
+        meta.append(what);
+      }
+      const date = document.createElement('div');
+      date.className = 'when'; date.textContent = when(design.created);
+      meta.append(date);
+      card.append(meta);
+
+      /* Straight into the builder on the design it names — the same link the
+         page has always understood. */
+      const open = document.createElement('a');
+      open.className = 'open';
+      open.href = '/?d=' + encodeURIComponent(design.code);
+      open.textContent = 'Open in the builder';
+      card.append(open);
+
+      $('#grid').append(card);
+    }
+  }catch(err){
+    console.error('gallery failed', err);
+    nothing('We couldn’t load that just now',
+      'Something went wrong on our end. Try the link again in a moment.');
+  }
+}
+load();
+</script>
+</body>
+</html>

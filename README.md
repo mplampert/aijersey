@@ -31,6 +31,10 @@ has no backend at all.
 
 **`/` — the order page.** The customer flow: design, colours, roster, order.
 
+**`/designs/` — the customer's gallery.** Every design saved under one email
+address: thumbnail, code, date and a button that opens it in the builder,
+newest first. Reached only by the random token in its URL — see below.
+
 **`/mockup/` — the mockup compositor. Parked, and not in the customer path.**
 It takes a flat artwork panel and renders it onto a fixed 3D jersey: the render
 in `public/mockup/front/`, clipped through four region masks with its own
@@ -88,6 +92,70 @@ than what it is of.
 - **Roster** — type, paste, or CSV. Parses `12 Sullivan L` and `31 Tremblay L G`.
   Validates duplicate numbers, missing number/name/size, and the minimum.
 - **Order** — live total, kit add-ons priced per player, account fields.
+
+## Pacing
+
+The three takes go one at a time, `CFG.spacing` apart, not all at once. Fired
+together they trip the provider's images-per-minute cap and two of the three
+come back 429 — the calls are spent either way, so the customer loses two
+options for nothing. A take that is rate limited waits out the `Retry-After` the
+provider sent and goes again, up to `CFG.rateRetries` times, counting down in
+the progress list so a minute of waiting reads as waiting.
+
+The function does not retry a 429 itself. Asking again in the same millisecond
+is one more request against the same cap, and a serverless function has an
+execution limit to run into where the browser does not.
+
+Tune `spacing`, `rateRetries` and `waitCap` in `CFG`.
+
+## Email and the gallery
+
+`api/send-design.ts`, from `noreply@send.lampertsusa.com`. The domain has to be
+verified in Resend or every send is refused. Two things trigger it, both of them
+a customer typing their address and pressing a button. Nothing sends unprompted.
+
+**Saving.** "Don't lose this design" writes Email, Team and Phone, then emails
+one link to that customer's gallery — not one link per design, because a gallery
+collects everything they ever save and a mail full of individual links goes
+stale the moment they make another one. The concept they saved is attached, so
+the mail still shows something to somebody who never clicks through.
+
+**Lookup.** "Saved a design here before?" takes an address and emails the same
+gallery link. `api/email-designs.ts` answers identically whether or not the
+address is on file: saying "no designs found" would turn it into a way to ask
+which addresses are real, and the person who owns the address finds out in their
+inbox either way.
+
+### The gallery link
+
+`/designs/?t=<token>`, read by `api/gallery.ts`. The token is 128 random bits,
+base64url, minted the first time an address saves and reused ever after, stored
+in **Gallery id** (`fldoNMDzarxLKYkwB`) on every design belonging to that
+address.
+
+It is deliberately not the address. `/designs?t=someone@gmail.com` would let
+anybody type in an address and read that person's designs. Same unlisted-link
+model as **Share id** on the Proofs table in the Lamperts base: anyone holding
+the link can see the gallery, so it is unlisted rather than private, and it goes
+nowhere but that customer's own inbox. The endpoint refuses anything that is not
+token-shaped, and returns codes, dates and pictures only — never the address the
+gallery belongs to.
+
+Attachment URLs are handed out live rather than stored: Airtable expires them
+within hours, so each load of the page gets fresh ones. The email's attachment
+is Airtable's 768px thumbnail rather than the original — a concept is 2.6MB and
+the thumbnail is 610KB, wider than it will ever be displayed.
+
+**A gallery starts from the address, not before it.** A design generated before
+the customer typed an email has no address on it and joins no gallery. Saving
+does stamp the whole of that visit — all three takes from one generation, not
+just the one on screen — but anything from an earlier visit stays out. So a
+first gallery is thin, and fills up from there.
+
+Sending is best-effort and never fails the save: the design, the address and the
+token are on record before it runs, and the page says which happened rather than
+promising mail that did not go. It also offers the gallery link inline, since
+somebody who just typed their address is right there.
 
 ## Pacing
 
