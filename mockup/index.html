@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jersey mockup compositor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5 2 3 4v3h2v7h6V7h2V4l-2-2-3 1z' fill='%23e4652a'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0e1013; --panel:#171a1f; --line:#282d35; --ink:#e9edf2; --dim:#98a1ae;
+  --accent:#e4652a; --field:#0f1216;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+h1{font-size:17px;margin:0;letter-spacing:.2px}
+h1 span{color:var(--dim);font-weight:400}
+header{
+  display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+  padding:14px 20px;border-bottom:1px solid var(--line);
+}
+header .note{color:var(--dim);font-size:13px}
+main{display:grid;grid-template-columns:340px minmax(0,1fr);gap:24px;padding:20px;align-items:start}
+@media (max-width:900px){main{grid-template-columns:1fr}}
+
+/* ---- controls ---- */
+.controls{display:flex;flex-direction:column;gap:18px;min-width:0}
+.grp{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.grp>h2{
+  font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
+  margin:0 0 10px;font-weight:600;
+}
+label{display:block;font-size:13px;color:var(--dim);margin:10px 0 4px}
+label:first-of-type{margin-top:0}
+input[type=range]{width:100%;accent-color:var(--accent)}
+input[type=number]{
+  width:100%;background:var(--field);border:1px solid var(--line);color:var(--ink);
+  border-radius:6px;padding:5px 7px;font:inherit;font-size:13px;
+}
+input[type=color]{
+  width:100%;height:32px;background:var(--field);border:1px solid var(--line);
+  border-radius:6px;padding:2px;cursor:pointer;
+}
+.val{float:right;color:var(--ink);font-variant-numeric:tabular-nums;font-size:12px}
+
+.seg{display:flex;gap:0;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{
+  flex:1;background:var(--field);border:0;color:var(--dim);font:inherit;font-size:13px;
+  padding:7px 4px;cursor:pointer;border-right:1px solid var(--line);
+}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--accent);color:#fff}
+.seg button:hover:not([aria-pressed=true]){color:var(--ink)}
+
+.drop{
+  border:1.5px dashed var(--line);border-radius:9px;padding:20px 12px;text-align:center;
+  color:var(--dim);font-size:13.5px;cursor:pointer;background:var(--field);
+}
+.drop:hover,.drop.over{border-color:var(--accent);color:var(--ink)}
+.drop.has{border-style:solid;color:var(--ink)}
+.thumb{display:flex;align-items:center;gap:10px;margin-top:10px}
+.thumb img{width:44px;height:44px;object-fit:cover;border-radius:6px;background:#000}
+.thumb b{font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thumb button{
+  margin-left:auto;background:none;border:0;color:var(--dim);cursor:pointer;font:inherit;
+  font-size:13px;text-decoration:underline;
+}
+
+details{border-top:1px solid var(--line);padding-top:10px;margin-top:12px}
+#regions>details:first-child{border-top:0;padding-top:0;margin-top:0}
+summary{cursor:pointer;font-size:13.5px;font-weight:500;list-style:none;display:flex;align-items:center;gap:8px}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--dim);font-size:11px}
+details[open]>summary::before{content:"▾"}
+summary i{width:13px;height:13px;border-radius:50%;border:1px solid rgba(255,255,255,.25);flex:0 0 auto}
+summary em{margin-left:auto;color:var(--dim);font-style:normal;font-size:12px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.chk{display:flex;align-items:center;gap:7px;color:var(--dim);font-size:13px;margin-top:10px;cursor:pointer}
+.chk input{accent-color:var(--accent)}
+
+button.go{
+  width:100%;background:var(--accent);color:#fff;border:0;border-radius:8px;
+  padding:11px;font:inherit;font-weight:600;cursor:pointer;
+}
+button.go:hover{filter:brightness(1.08)}
+button.ghost{
+  width:100%;background:var(--field);color:var(--ink);border:1px solid var(--line);
+  border-radius:8px;padding:9px;font:inherit;font-size:13.5px;cursor:pointer;margin-top:8px;
+}
+button.ghost:hover{border-color:var(--dim)}
+
+/* ---- preview ---- */
+.stage{position:sticky;top:20px;display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+.frame{
+  width:600px;max-width:100%;aspect-ratio:1;border-radius:12px;overflow:hidden;
+  border:1px solid var(--line);
+}
+/* Transparent is the default because that is what exports; the checker is the
+   only honest way to show it. */
+.frame.checker{
+  background-color:#3a3f47;
+  background-image:
+    linear-gradient(45deg,#2b2f36 25%,transparent 25%,transparent 75%,#2b2f36 75%),
+    linear-gradient(45deg,#2b2f36 25%,transparent 25%,transparent 75%,#2b2f36 75%);
+  background-size:24px 24px;background-position:0 0,12px 12px;
+}
+.frame.white{background:#fff}
+.frame.dark{background:#15181c}
+.frame canvas{display:block;width:100%;height:100%}
+.stage .note{color:var(--dim);font-size:12.5px;margin:0}
+.err{color:#ff9a7b;font-size:13.5px;max-width:600px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Jersey mockup <span>— flat artwork onto the render</span></h1>
+  <p class="note">Customer preview only. Not production art — no type, no numbers, no logo.</p>
+</header>
+
+<main>
+  <div class="controls">
+
+    <div class="grp">
+      <h2>Artwork</h2>
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Upload artwork">
+        Drop a flat artwork PNG here, or tap to choose
+      </div>
+      <input type="file" id="file" accept="image/*" hidden>
+      <div class="thumb" id="artThumb" hidden>
+        <img id="artImg" alt="">
+        <b id="artName"></b>
+        <button type="button" id="artClear">Remove</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <h2>Mode</h2>
+      <div class="seg" id="mode" role="group" aria-label="Artwork mode">
+        <button type="button" data-v="unified" aria-pressed="true">Unified</button>
+        <button type="button" data-v="region" aria-pressed="false">Per-region</button>
+      </div>
+      <p class="note" id="modeNote" style="color:var(--dim);font-size:12.5px;margin:9px 0 0">
+        One artwork across the whole garment, each region clipping the same draw.
+      </p>
+    </div>
+
+    <div class="grp" id="regionPanel">
+      <h2 id="regionTitle">Artwork placement</h2>
+      <div id="regions"></div>
+    </div>
+
+    <div class="grp">
+      <h2>Shading</h2>
+      <label for="contrast">Contrast <span class="val" id="contrastVal">1.00</span></label>
+      <input type="range" id="contrast" min="0.6" max="1.6" step="0.02" value="1">
+      <label>Blend</label>
+      <div class="seg" id="blend" role="group" aria-label="Blend mode">
+        <button type="button" data-v="overlay" aria-pressed="true">Overlay</button>
+        <button type="button" data-v="soft-light" aria-pressed="false">Soft light</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <h2>Preview background</h2>
+      <div class="seg" id="bg" role="group" aria-label="Preview background">
+        <button type="button" data-v="checker" aria-pressed="true">Transparent</button>
+        <button type="button" data-v="white" aria-pressed="false">White</button>
+        <button type="button" data-v="dark" aria-pressed="false">Dark</button>
+      </div>
+      <p class="note" style="color:var(--dim);font-size:12.5px;margin:9px 0 0">
+        Preview only. The export is always transparent.
+      </p>
+    </div>
+
+    <div class="grp">
+      <h2>Export</h2>
+      <button class="go" id="export">Export PNG — 1500 × 1500</button>
+      <button class="ghost" id="reset">Reset everything</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="frame checker" id="frame"><canvas id="out" width="1500" height="1500"></canvas></div>
+    <p class="note" id="status">Loading the garment…</p>
+    <p class="err" id="err" hidden></p>
+  </div>
+</main>
+
+<script>
+/* Flat artwork onto a fixed garment.
+ *
+ * The garment is a real 3D render and never changes; only the artwork does.
+ * That is the whole inversion this tool exists for — an image generator asked
+ * for "a hockey jersey" returns a different garment every time, so the garment
+ * is taken out of its hands and it is asked for a flat panel instead.
+ *
+ * Everything below is measured off the five files in ASSETS.dir and re-verified
+ * against their pixels; see the numbers in MEASURED. */
+
+const ASSETS = {
+  dir:'/public/mockup/front/',
+  base:'Base.png',
+  masks:{
+    body:'mask-body-front.png',
+    shoulders:'mask-shoulders.png',
+    sleeves:'mask-sleeves.png',
+    collar:'mask-collar.png',
+  },
+};
+
+const CANVAS = 1500;                                  // every asset is 1500 x 1500
+const GARMENT = {x0:234, y0:97, x1:1251, y1:1398};    // Base.png alpha bounding box
+const SHADE_PIVOT = 144;                              // median luminance inside the garment
+
+/* Base.png is neutral to within 3 levels across the whole garment, so the red
+   channel is the luminance and no conversion is needed.
+
+   The mid-tone is 144, not 128. Overlay and soft-light both pivot at 128, so
+   the render is remapped around that before it is used as a shading layer —
+   without it every mockup comes out washed out. */
+
+/* The neck opening: dark mesh inside the collar, deliberately in none of the
+   four masks, and no artwork may reach it. The one part of the garment the
+   fill below has to be told to leave alone. */
+const NECK = {x0:606, y0:148, x1:893, y1:240};
+
+/* Painted in this order; collar last because it sits over everything it
+   touches. `fill` is not a mask on disk — see buildFill. */
+const ORDER = ['body','shoulders','sleeves','collar'];
+const PAINT = ['fill', ...ORDER];
+
+const NAMES = {body:'Body', shoulders:'Shoulder yoke', sleeves:'Sleeves', collar:'Collar'};
+
+const $ = s => document.querySelector(s);
+const clamp = (v,a,b) => v<a?a:v>b?b:v;
+
+/* ---------------- state ---------------- */
+/* A transform is per artwork source: the master in unified mode, and one each
+   in per-region mode. scale 1 means "cover the garment", not "cover the canvas". */
+const newXf = () => ({scale:1, x:0, y:0, rot:0, tile:false});
+
+const DEFAULTS = {
+  body:      {src:'art',   color:'#c8102e'},
+  shoulders: {src:'art',   color:'#141619'},
+  sleeves:   {src:'art',   color:'#141619'},
+  /* Pattern across the rib almost always looks wrong, so the collar starts
+     solid in both modes. It can still be switched to artwork. */
+  collar:    {src:'color', color:'#141619'},
+};
+
+let S;
+function freshState(){
+  S = {
+    mode:'unified', art:null, artName:'', contrast:1, blend:'overlay', bg:'checker',
+    xf:newXf(),
+    regions:Object.fromEntries(ORDER.map(k=>
+      [k,{src:DEFAULTS[k].src, color:DEFAULTS[k].color, img:null, name:'', xf:newXf()}])),
+  };
+}
+freshState();
+
+/* ---------------- the garment ---------------- */
+const out = $('#out'), outCtx = out.getContext('2d');
+let baseImg = null;          // also the final clip: it defines the silhouette
+let shadeCv = null, shadeCtx = null, basePixels = null, shadeImg = null;
+const MASK = {};             // region key -> offscreen canvas, alpha = coverage
+const REG  = {};             // region key -> offscreen canvas the region paints into
+let ready = false;
+
+function offscreen(){
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = CANVAS;
+  return cv;
+}
+function loadImg(src){
+  return new Promise((ok,fail)=>{
+    const im = new Image();
+    im.onload = ()=>ok(im);
+    im.onerror = ()=>fail(new Error(src+' did not load'));
+    im.src = src;
+  });
+}
+function pixels(img){
+  const cv = offscreen();
+  const c = cv.getContext('2d',{willReadFrequently:true});
+  c.drawImage(img,0,0);
+  return c.getImageData(0,0,CANVAS,CANVAS);
+}
+
+/* The four masks do not quite tile the garment. Along the right armhole seam
+ * they leave a wedge — the shaded crease between body and sleeve, in neither
+ * mask — up to 27px across and 13 at the median, plus around 600 sub-pixel
+ * slivers on the other shared edges. Left alone every one of them shows through
+ * as bare grey, and the armhole one is wide enough to read as a hairline down
+ * the finished mockup.
+ *
+ * Dilating the body cannot reach across 27px without smearing it past its real
+ * edge and under the collar and shoulder seams. So nothing is dilated and
+ * nothing is guessed at: the whole silhouette is painted with the body's own
+ * source and drawn underneath all four regions. Every one of them covers it, so
+ * it can only ever show where none of them reach — which is exactly the gap,
+ * and it takes the slivers with it in the same step.
+ *
+ * Underpainting the whole silhouette rather than only the gap is also what puts
+ * the finished alpha exactly on Base.png's: a colour layer that is opaque right
+ * to the edge survives the shading pass at full strength, and the one clip at
+ * the end sets the rim. Subtract the masks from it instead and the rim is
+ * assembled from two partial coverages, which lands up to 93 levels off.
+ *
+ * The neck opening is bare on purpose — the dark mesh inside the collar. Every
+ * pixel of its rectangle is either that opening or already under the collar and
+ * shoulder masks, so the rectangle comes straight back out. */
+function buildFill(baseAlpha){
+  const N = CANVAS*CANVAS;
+  const img = new ImageData(CANVAS,CANVAS);
+  for(let p=0;p<N;p++){
+    img.data[p*4] = img.data[p*4+1] = img.data[p*4+2] = 255;
+    img.data[p*4+3] = baseAlpha[p] ? 255 : 0;
+  }
+  for(let y=NECK.y0;y<=NECK.y1;y++)
+    for(let x=NECK.x0;x<=NECK.x1;x++) img.data[(y*CANVAS+x)*4+3] = 0;
+
+  const cv = offscreen();
+  cv.getContext('2d').putImageData(img,0,0);
+  return cv;
+}
+
+async function buildGarment(){
+  baseImg = await loadImg(ASSETS.dir+ASSETS.base);
+  if(baseImg.naturalWidth!==CANVAS || baseImg.naturalHeight!==CANVAS)
+    throw new Error('Base.png is '+baseImg.naturalWidth+'×'+baseImg.naturalHeight+
+                    ', and every measured constant in here assumes '+CANVAS+'×'+CANVAS+'.');
+
+  const baseData = pixels(baseImg);
+  basePixels = baseData.data;
+
+  const maskImgs = await Promise.all(ORDER.map(k=>loadImg(ASSETS.dir+ASSETS.masks[k])));
+  const maskData = maskImgs.map(pixels);
+
+  // Only the alpha channel of a mask means anything; the RGB is ignored.
+  const N = CANVAS*CANVAS;
+  const baseAlpha = new Uint8Array(N);
+  for(let p=0;p<N;p++) baseAlpha[p] = basePixels[p*4+3];
+  const alphas = maskData.map(d=>{
+    const a = new Uint8Array(N);
+    for(let p=0;p<N;p++) a[p] = d.data[p*4+3];
+    return a;
+  });
+
+  MASK.fill = buildFill(baseAlpha);
+
+  // A mask is used only for its alpha, so the RGB is flattened to white and
+  // the file's own antialiasing carried through as it stands.
+  ORDER.forEach((k,r)=>{
+    const img = maskData[r];
+    for(let p=0;p<N;p++){
+      img.data[p*4] = img.data[p*4+1] = img.data[p*4+2] = 255;
+      img.data[p*4+3] = alphas[r][p];
+    }
+    const cv = offscreen();
+    cv.getContext('2d').putImageData(img,0,0);
+    MASK[k] = cv;
+  });
+  PAINT.forEach(k=>{
+    const rc = offscreen();
+    REG[k] = {cv:rc, ctx:rc.getContext('2d')};
+  });
+
+  shadeCv = offscreen();
+  shadeCtx = shadeCv.getContext('2d');
+  shadeImg = shadeCtx.createImageData(CANVAS,CANVAS);
+  buildShade();
+
+  ready = true;
+  return true;
+}
+
+/* The shading layer: the render recentred on 128 so overlay and soft-light,
+   which both pivot there, land where the garment's own mid-tone is. */
+function buildShade(){
+  const src = basePixels, dst = shadeImg.data, k = S.contrast;
+  for(let i=0;i<src.length;i+=4){
+    const v = clamp(128 + (src[i]-SHADE_PIVOT)*k, 0, 255);
+    dst[i] = dst[i+1] = dst[i+2] = v;
+    dst[i+3] = src[i+3];
+  }
+  shadeCtx.putImageData(shadeImg,0,0);
+}
+
+/* ---------------- painting ---------------- */
+/* Scale 1 covers the garment's bounding box, not the 1500 canvas: fit to the
+   canvas and a third of the artwork lands outside the silhouette and is never
+   seen. Rotation and offset work from the centre of that same box. */
+function paintArt(ctx,img,xf){
+  const gw = GARMENT.x1-GARMENT.x0, gh = GARMENT.y1-GARMENT.y0;
+  const cover = Math.max(gw/img.naturalWidth, gh/img.naturalHeight);
+  const s = cover*xf.scale;
+  const w = img.naturalWidth*s, h = img.naturalHeight*s;
+
+  ctx.save();
+  ctx.translate((GARMENT.x0+GARMENT.x1)/2 + xf.x, (GARMENT.y0+GARMENT.y1)/2 + xf.y);
+  ctx.rotate(xf.rot*Math.PI/180);
+  if(xf.tile){
+    const pat = ctx.createPattern(img,'repeat');
+    pat.setTransform(new DOMMatrix([s,0,0,s,-w/2,-h/2]));
+    ctx.fillStyle = pat;
+    const r = CANVAS*1.6;          // covers the canvas at any rotation
+    ctx.fillRect(-r,-r,r*2,r*2);
+  }else{
+    ctx.drawImage(img,-w/2,-h/2,w,h);
+  }
+  ctx.restore();
+}
+
+/* What a region draws: the master artwork in unified mode, its own picture or
+   flat colour in per-region mode. A region set to artwork with nothing of its
+   own falls back to the master, so switching modes never empties the canvas. */
+function sourceFor(k){
+  // The gap under the seams takes whatever the body is showing.
+  const r = S.regions[k==='fill' ? 'body' : k];
+  if(S.mode==='unified'){
+    // The collar is the one region unified mode still lets go solid.
+    if(k==='collar' && r.src==='color') return {color:r.color};
+    return S.art ? {img:S.art, xf:S.xf} : {color:r.color};
+  }
+  if(r.src==='color') return {color:r.color};
+  const img = r.img || S.art;
+  return img ? {img, xf:r.img?r.xf:S.xf} : {color:r.color};
+}
+
+function paintRegion(k){
+  const {cv,ctx} = REG[k];
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.clearRect(0,0,CANVAS,CANVAS);
+
+  const src = sourceFor(k);
+  if(src.img) paintArt(ctx,src.img,src.xf);
+  else { ctx.fillStyle = src.color; ctx.fillRect(0,0,CANVAS,CANVAS); }
+
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.drawImage(MASK[k],0,0);
+  ctx.globalCompositeOperation = 'source-over';
+  return cv;
+}
+
+/* Flat colour first, then the render multiplied through it. Without that
+   second pass the output is a sticker cut to the shape of a jersey. */
+function render(){
+  if(!ready) return;
+  outCtx.setTransform(1,0,0,1,0,0);
+  outCtx.globalCompositeOperation = 'source-over';
+  outCtx.clearRect(0,0,CANVAS,CANVAS);
+
+  for(const k of PAINT) outCtx.drawImage(paintRegion(k),0,0);
+
+  outCtx.globalCompositeOperation = S.blend;
+  outCtx.drawImage(shadeCv,0,0);
+
+  /* The blend carries the shading layer's own alpha past the artwork's edge,
+     so the silhouette is cut again from the render that defined it. The colour
+     underneath is opaque to that edge, so this one clip is what sets the rim. */
+  outCtx.globalCompositeOperation = 'destination-in';
+  outCtx.drawImage(baseImg,0,0);
+  outCtx.globalCompositeOperation = 'source-over';
+}
+
+/* Sliders fire per pixel dragged and a render is five 1500² composites, so
+   coalesce onto the frame. */
+let queued = false;
+function draw(){
+  if(queued) return;
+  queued = true;
+  requestAnimationFrame(()=>{ queued = false; render(); });
+}
+
+/* ---------------- controls ---------------- */
+function segment(sel,get,set){
+  const box = $(sel);
+  box.querySelectorAll('button').forEach(b=>{
+    b.onclick = ()=>{
+      set(b.dataset.v);
+      box.querySelectorAll('button').forEach(x=>
+        x.setAttribute('aria-pressed', x.dataset.v===get() ? 'true':'false'));
+    };
+  });
+}
+
+segment('#mode',()=>S.mode,v=>{
+  S.mode = v;
+  $('#modeNote').textContent = v==='unified'
+    ? 'One artwork across the whole garment, each region clipping the same draw.'
+    : 'Each region takes its own picture or a flat colour.';
+  $('#regionTitle').textContent = v==='unified' ? 'Artwork placement' : 'Regions';
+  buildRegions();
+  draw();
+});
+segment('#blend',()=>S.blend,v=>{S.blend=v;draw();});
+segment('#bg',()=>S.bg,v=>{S.bg=v;$('#frame').className='frame '+v;});
+
+const contrast = $('#contrast');
+contrast.oninput = ()=>{
+  S.contrast = parseFloat(contrast.value);
+  $('#contrastVal').textContent = S.contrast.toFixed(2);
+  buildShade();
+  draw();
+};
+
+/* Transform controls. In unified mode there is one set, on the master; in
+   per-region mode each region gets its own alongside its colour. */
+function xfControls(box,xf){
+  const row = (label,key,min,max,step,fmt)=>{
+    const l = document.createElement('label');
+    l.textContent = label;
+    const v = document.createElement('span');
+    v.className = 'val'; v.textContent = fmt(xf[key]);
+    l.append(v);
+    const i = document.createElement('input');
+    i.type='range'; i.min=min; i.max=max; i.step=step; i.value=xf[key];
+    i.oninput = ()=>{ xf[key] = parseFloat(i.value); v.textContent = fmt(xf[key]); draw(); };
+    box.append(l,i);
+  };
+  row('Scale','scale',0.5,3,0.01,v=>v.toFixed(2)+'×');
+  row('Offset X','x',-750,750,1,v=>Math.round(v)+'px');
+  row('Offset Y','y',-750,750,1,v=>Math.round(v)+'px');
+  row('Rotation','rot',-180,180,1,v=>Math.round(v)+'°');
+
+  const c = document.createElement('label');
+  c.className='chk';
+  const cb = document.createElement('input');
+  cb.type='checkbox'; cb.checked=xf.tile;
+  cb.onchange = ()=>{ xf.tile = cb.checked; draw(); };
+  c.append(cb,document.createTextNode('Tile / repeat'));
+  box.append(c);
+}
+
+function buildRegions(){
+  const box = $('#regions');
+  box.innerHTML = '';
+
+  if(S.mode==='unified'){
+    xfControls(box,S.xf);
+
+    // The collar still gets a say, because artwork across a rib rarely reads.
+    const d = document.createElement('details');
+    const sm = document.createElement('summary');
+    const sw = document.createElement('i'); sw.style.background = S.regions.collar.color;
+    sm.append(sw,document.createTextNode('Collar'));
+    const em = document.createElement('em');
+    em.textContent = S.regions.collar.src==='color' ? 'Solid' : 'Artwork';
+    sm.append(em);
+    d.append(sm);
+
+    const seg = document.createElement('div');
+    seg.className = 'seg';
+    ['color','art'].forEach(v=>{
+      const b = document.createElement('button');
+      b.type='button'; b.dataset.v=v;
+      b.textContent = v==='color' ? 'Solid colour' : 'Artwork';
+      b.setAttribute('aria-pressed', S.regions.collar.src===v ? 'true':'false');
+      b.onclick = ()=>{
+        S.regions.collar.src = v;
+        seg.querySelectorAll('button').forEach(x=>
+          x.setAttribute('aria-pressed', x.dataset.v===v ? 'true':'false'));
+        em.textContent = v==='color' ? 'Solid' : 'Artwork';
+        draw();
+      };
+      seg.append(b);
+    });
+    const col = document.createElement('input');
+    col.type='color'; col.value=S.regions.collar.color;
+    col.oninput = ()=>{ S.regions.collar.color = sw.style.background = col.value; draw(); };
+    d.append(seg,col);
+    box.append(d);
+    return;
+  }
+
+  ORDER.forEach(k=>{
+    const r = S.regions[k];
+    const d = document.createElement('details');
+    if(k==='body') d.open = true;
+
+    const sm = document.createElement('summary');
+    const sw = document.createElement('i'); sw.style.background = r.color;
+    const em = document.createElement('em');
+    const say = ()=>{ em.textContent = r.src==='color' ? 'Solid'
+                       : (r.img ? 'Own artwork' : (S.art ? 'Master artwork' : 'No artwork')); };
+    sm.append(sw,document.createTextNode(NAMES[k]),em);
+    say();
+    d.append(sm);
+
+    const seg = document.createElement('div');
+    seg.className='seg';
+    const art = document.createElement('div');
+
+    ['color','art'].forEach(v=>{
+      const b = document.createElement('button');
+      b.type='button'; b.dataset.v=v;
+      b.textContent = v==='color' ? 'Solid colour' : 'Artwork';
+      b.setAttribute('aria-pressed', r.src===v ? 'true':'false');
+      b.onclick = ()=>{
+        r.src = v;
+        seg.querySelectorAll('button').forEach(x=>
+          x.setAttribute('aria-pressed', x.dataset.v===v ? 'true':'false'));
+        art.hidden = v!=='art'; col.hidden = v!=='color';
+        say(); draw();
+      };
+      seg.append(b);
+    });
+
+    const col = document.createElement('input');
+    col.type='color'; col.value=r.color; col.hidden = r.src!=='color';
+    col.oninput = ()=>{ r.color = sw.style.background = col.value; draw(); };
+
+    const pick = document.createElement('button');
+    pick.type='button'; pick.className='ghost';
+    pick.textContent = r.img ? r.name+' — replace' : 'Use a different picture here';
+    pick.onclick = ()=>{
+      const f = document.createElement('input');
+      f.type='file'; f.accept='image/*';
+      f.onchange = ()=>{ if(f.files[0]) takeArt(f.files[0],k); };
+      f.click();
+    };
+    art.hidden = r.src!=='art';
+    art.append(pick);
+    /* Placement controls only once the region has a picture of its own. A
+       region falling back to the master artwork is placed by the master's
+       transform, and four copies of the same sliders that only agree until one
+       of them is touched help nobody. */
+    if(r.img) xfControls(art,r.xf);
+    else{
+      const p = document.createElement('p');
+      p.className = 'note';
+      p.style.cssText = 'color:var(--dim);font-size:12.5px;margin:9px 0 0';
+      p.textContent = S.art
+        ? 'Using the master artwork, placed with it. Add a picture here to place it separately.'
+        : 'No artwork loaded, so this shows its solid colour.';
+      art.append(p);
+    }
+
+    d.append(seg,col,art);
+    box.append(d);
+  });
+}
+
+/* ---------------- artwork ---------------- */
+/* A file becomes the master, or one region's own picture. Read as a data URL so
+   the canvas is never tainted and the export keeps working. */
+function takeArt(f,region){
+  if(!f.type.startsWith('image/')){ fail(new Error('That file is not an image.')); return; }
+  const r = new FileReader();
+  r.onload = async ()=>{
+    try{
+      const img = await loadImg(r.result);
+      if(region){
+        S.regions[region].img = img;
+        S.regions[region].name = f.name;
+        S.regions[region].src = 'art';
+      }else{
+        S.art = img; S.artName = f.name;
+        $('#artImg').src = r.result;
+        $('#artName').textContent = f.name+' — '+img.naturalWidth+'×'+img.naturalHeight;
+        $('#artThumb').hidden = false;
+        $('#drop').classList.add('has');
+        $('#drop').textContent = 'Drop another to replace';
+      }
+      buildRegions();
+      draw();
+      note();
+    }catch(err){ fail(err); }
+  };
+  r.readAsDataURL(f);
+}
+
+const drop = $('#drop'), file = $('#file');
+drop.onclick = ()=>file.click();
+drop.onkeydown = e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); file.click(); } };
+drop.ondragover = e=>{ e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = ()=>drop.classList.remove('over');
+drop.ondrop = e=>{
+  e.preventDefault(); drop.classList.remove('over');
+  if(e.dataTransfer.files[0]) takeArt(e.dataTransfer.files[0],null);
+};
+file.onchange = ()=>{ if(file.files[0]) takeArt(file.files[0],null); };
+
+$('#artClear').onclick = ()=>{
+  S.art = null; S.artName = '';
+  $('#artThumb').hidden = true;
+  drop.classList.remove('has');
+  drop.textContent = 'Drop a flat artwork PNG here, or tap to choose';
+  file.value = '';
+  buildRegions(); draw(); note();
+};
+
+$('#reset').onclick = ()=>{
+  freshState();
+  $('#artThumb').hidden = true;
+  drop.classList.remove('has');
+  drop.textContent = 'Drop a flat artwork PNG here, or tap to choose';
+  file.value = '';
+  contrast.value = 1; $('#contrastVal').textContent = '1.00';
+  $('#frame').className = 'frame checker';
+  document.querySelectorAll('.seg').forEach(box=>{
+    const cur = box.id==='mode' ? 'unified' : box.id==='blend' ? 'overlay' : 'checker';
+    box.querySelectorAll('button').forEach(b=>
+      b.setAttribute('aria-pressed', b.dataset.v===cur ? 'true':'false'));
+  });
+  $('#modeNote').textContent = 'One artwork across the whole garment, each region clipping the same draw.';
+  $('#regionTitle').textContent = 'Artwork placement';
+  buildShade(); buildRegions(); draw(); note();
+};
+
+/* ---------------- export ---------------- */
+$('#export').onclick = ()=>{
+  if(!ready) return;
+  out.toBlob(b=>{
+    const url = URL.createObjectURL(b);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (S.artName ? S.artName.replace(/\.[^.]+$/,'') : 'jersey')+'-mockup.png';
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  },'image/png');
+};
+
+/* ---------------- go ---------------- */
+function fail(err){
+  const box = $('#err');
+  box.textContent = err.message;
+  box.hidden = false;
+  console.error(err);
+}
+function note(){
+  $('#status').textContent = S.art
+    ? 'Rendered at 1500 × 1500, shown at 600.'
+    : 'Rendered at 1500 × 1500, shown at 600. Drop artwork in to replace the flat colours.';
+}
+
+buildRegions();
+buildGarment().then(()=>{
+  render();
+  note();
+}).catch(err=>{
+  $('#status').textContent = 'The garment did not load.';
+  fail(err);
+});
+</script>
+</body>
+</html>
