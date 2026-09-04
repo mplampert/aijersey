@@ -40,7 +40,9 @@ compositor stays in the repo for when a second look is wanted.
 
 `/api/generate-concept` now returns the finished sales image: the jersey front
 and back on wooden hangers with a matching pair of leg socks laid alongside,
-real fabric drape, soft studio light, neutral background. The design is asked
+real fabric drape, soft studio light, neutral background. The socks coordinate
+rather than copy: same palette, stripe bands across the lower third, and the
+jersey's scene deliberately does not continue onto them. The design is asked
 for as an illustrated scene built from the theme rather than a stripe set —
 left to itself a model gives back two bands on a solid body — with a mascot or
 icon at the chest, and the vibe the customer picks says how it is drawn rather
