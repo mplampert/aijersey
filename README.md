@@ -83,6 +83,21 @@ than what it is of.
   Validates duplicate numbers, missing number/name/size, and the minimum.
 - **Order** — live total, kit add-ons priced per player, account fields.
 
+## Pacing
+
+The three takes go one at a time, `CFG.spacing` apart, not all at once. Fired
+together they trip the provider's images-per-minute cap and two of the three
+come back 429 — the calls are spent either way, so the customer loses two
+options for nothing. A take that is rate limited waits out the `Retry-After` the
+provider sent and goes again, up to `CFG.rateRetries` times, counting down in
+the progress list so a minute of waiting reads as waiting.
+
+The function does not retry a 429 itself. Asking again in the same millisecond
+is one more request against the same cap, and a serverless function has an
+execution limit to run into where the browser does not.
+
+Tune `spacing`, `rateRetries` and `waitCap` in `CFG`.
+
 ## Reading a failed generation
 
 Every failure prints one line to the function log — `netlify dev` puts those in
@@ -133,8 +148,10 @@ Everything tunable is in the `CFG` object at the top of the script in
 and the colour card. Replace the colour card with your factory-matched
 swatches — the twenty in there now are plausible placeholders, not real.
 
-`MODEL` in the function is `gemini-2.5-flash-image`. Check for a newer image
-model before launch; also confirm your Gemini API tier allows image output.
+`MODEL` in the function is `openai/gpt-image-2`, confirmed present on the
+gateway's public model list (`curl https://ai-gateway.vercel.sh/v1/models`, no
+key needed). That list is the place to check when a slug stops working — note
+Flux is owned by `bfl`, not `black-forest-labs`.
 
 The `BLOCKED` list in the function screens obvious trademark requests. It's a
 crude keyword filter, not a substitute for reviewing every proof.

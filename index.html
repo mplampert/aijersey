@@ -320,6 +320,19 @@ textarea{resize:vertical;line-height:1.5}
 .share button:hover{color:var(--crease-lo)}
 .share button[hidden]{display:none}
 .code b{font-weight:700;font-size:18px;letter-spacing:.12em;color:var(--crease);font-variant-numeric:tabular-nums}
+/* One row per concept while a run is going, so three takes arriving over a
+   minute look like progress rather than like nothing happening. */
+.runs{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
+.runs li{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--dim)}
+.runs b{font-weight:500;color:var(--ink)}
+.runs small{margin-left:auto;font-size:12.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+.runs i{width:9px;height:9px;border-radius:50%;background:var(--line);flex:0 0 auto}
+.runs li[data-state=drawing] i{background:var(--accent);animation:pulse 1.1s ease-in-out infinite}
+.runs li[data-state=waiting] i{background:#c8912a}
+.runs li[data-state=done] i{background:#2f9e5f}
+.runs li[data-state=failed] i{background:#c4483a}
+.runs li[data-state=done] b,.runs li[data-state=drawing] b{color:var(--ink)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .vers{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .vers[hidden],.refine[hidden]{display:none}
 .vers button{padding:0;line-height:0;background:#eef1f4;border:1px solid var(--seam);border-radius:6px;cursor:pointer}
@@ -571,6 +584,7 @@ footer{
         </p>
         <p class="saved" id="shareMsg" hidden role="status"></p>
 
+        <ul class="runs" id="runs" hidden aria-label="Progress"></ul>
         <div class="vers" id="vers" hidden role="group" aria-label="Concept options"></div>
         <p class="saved" id="genMsg" hidden role="status"></p>
 
@@ -825,6 +839,12 @@ const CFG = {
     {id:'vneck', name:'V-neck',       note:'Modern'},
     {id:'crew',  name:'Crew',         note:'Clean'},
   ],
+  /* The three takes go one at a time, spaced out. Fired together they hit the
+     provider's images-per-minute cap and two of the three come back 429, which
+     costs the customer two options and costs us the calls anyway. */
+  spacing: 6000,        // ms to leave between one generation and the next
+  rateRetries: 2,       // extra goes at a take that came back rate limited
+  waitCap: 90000,       // never sit on a retry-after longer than this
   endpoint: '/api/generate-concept',  // serverless function; returns { image } or { error }
   getEndpoint: '/api/get-design',     // serverless function; returns a shared design by code
   saveEndpoint: '/api/save-design'    // serverless function; returns { ok } or { error }
@@ -1310,6 +1330,8 @@ async function askConcept(prompt,baseImage,variant){
     const e=new Error((body&&body.error)||'Something went wrong — try again in a moment.');
     e.guidance=res.status===422;   // a refusal, not a system failure
     e.kind=d&&d.kind;
+    e.status=res.status;
+    e.retryAfter=d&&d.retryAfter;
     e.took=took;
     throw e;
   }
@@ -1518,23 +1540,98 @@ function drawVersions(){
   box.hidden=!S.versions.length;
 }
 
+/* ---------------- a run, one take at a time ---------------- */
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+function drawRuns(runs){
+  const box=$('#runs');
+  box.hidden=!runs.length;
+  box.innerHTML='';
+  const label={queued:'Waiting',drawing:'Drawing…',waiting:'Rate limited',done:'Ready',failed:'Didn\'t come back'};
+  runs.forEach(r=>{
+    const li=document.createElement('li');
+    li.dataset.state=r.state;
+    const dot=document.createElement('i');
+    const name=document.createElement('b');name.textContent=r.name;
+    const state=document.createElement('span');state.textContent=r.note||label[r.state];
+    li.append(dot,name,state);
+    box.append(li);
+  });
+}
+
+/* Counts down in the row rather than blocking silently, so a minute of waiting
+   on a rate limit reads as waiting rather than as nothing happening. */
+async function countdown(ms,run,runs,word){
+  const until=Date.now()+ms;
+  for(;;){
+    const left=Math.ceil((until-Date.now())/1000);
+    if(left<=0) break;
+    run.note=word+' '+left+'s';
+    drawRuns(runs);
+    await sleep(Math.min(1000,until-Date.now()));
+  }
+  run.note='';
+  drawRuns(runs);
+}
+
+/* Retry-After is seconds, or an HTTP date, or absent. Absent gets a climbing
+   default: a cap we have already tripped is not going to clear instantly. */
+function waitFor(err,attempt){
+  const raw=err&&err.retryAfter;
+  if(raw!=null){
+    const n=Number(raw);
+    if(Number.isFinite(n)&&n>=0) return Math.min(n*1000+500,CFG.waitCap);
+    const at=Date.parse(raw);
+    if(!Number.isNaN(at)) return Math.min(Math.max(at-Date.now(),0)+500,CFG.waitCap);
+  }
+  return Math.min(15000*attempt,CFG.waitCap);
+}
+
+/* One take: asks, and waits out a rate limit rather than giving up on it. */
+async function oneTake(prompt,variant,run,runs){
+  for(let attempt=1;;attempt++){
+    run.state='drawing';run.note='';drawRuns(runs);
+    try{
+      return await askConcept(prompt,null,variant);
+    }catch(err){
+      if(err.kind!=='rate-limit'||attempt>CFG.rateRetries) throw err;
+      run.state='waiting';
+      await countdown(waitFor(err,attempt),run,runs,'Rate limited — retrying in');
+    }
+  }
+}
+
 $('#gen').onclick=async()=>{
   const prompt=buildBrief();
   const btn=$('#gen'), msg=$('#genMsg');
   btn.disabled=true;btn.textContent='Generating…';
   msg.hidden=true;
-  showBusy('Drawing three concepts');
+  showBusy('Drawing the first of '+CFG.variants.length);
 
-  /* All three go at once and each is shown the moment it lands, so the first
-     one back fills the canvas instead of waiting on the slowest. One that
-     fails costs only its own option. */
+  /* One at a time, spaced out. Each is shown the moment it lands, so the first
+     one back fills the canvas and the rest arrive behind it. One that fails
+     costs only its own option. */
   let landed=0; const failed=[];
-  await Promise.all(CFG.variants.map(v=>
-    askConcept(prompt,null,v.id).then(
-      async image=>{ addVersion(await applyCrest(image),v.name,landed===0,image); landed++; },
-      err=>{ failed.push(err); }
-    )
-  ));
+  const runs=CFG.variants.map(v=>({id:v.id,name:v.name,state:'queued',note:''}));
+  drawRuns(runs);
+
+  for(let i=0;i<CFG.variants.length;i++){
+    const v=CFG.variants[i], run=runs[i];
+    if(i) await countdown(CFG.spacing,run,runs,'Next in');
+    btn.textContent='Drawing '+(i+1)+' of '+CFG.variants.length+'…';
+    try{
+      const image=await oneTake(prompt,v.id,run,runs);
+      run.state='done';run.note='';drawRuns(runs);
+      addVersion(await applyCrest(image),v.name,landed===0,image);
+      landed++;
+    }catch(err){
+      run.state='failed';
+      run.note=TROUBLE[err.kind]||'didn\'t come back';
+      drawRuns(runs);
+      failed.push(err);
+    }
+  }
+  $('#runs').hidden=true;
 
   if(!landed){
     showError(failed[0]||new Error('Something went wrong — try again in a moment.'));
@@ -1543,10 +1640,12 @@ $('#gen').onclick=async()=>{
     /* Say which failure it was. "2 of 3 didn't come back" sends somebody to the
        logs; "2 of 3 were rate limited" is already the answer. */
     const kinds=[...new Set(failed.map(e=>TROUBLE[e.kind]).filter(Boolean))];
+    const capped=failed.some(e=>e.kind==='rate-limit');
     msg.className='saved bad';
     msg.textContent=failed.length+' of the three didn\'t come back'
       +(kinds.length?' — '+kinds.join(' and '):'')+'. Here '
-      +(landed===1?'is the one that did':'are the '+landed+' that did')+'.';
+      +(landed===1?'is the one that did':'are the '+landed+' that did')+'.'
+      +(capped?' The image service caps how many we can draw a minute — try again shortly for the rest.':'');
     msg.hidden=false;
     console.warn('concept run: '+landed+' of '+CFG.variants.length+' landed; failures: '
       +failed.map(e=>(e.kind||'unknown')+' after '+(e.took||'?')+'s').join(', '));

@@ -34,9 +34,13 @@ import { checkPanel, type PanelIssue } from "./check-panel.js";
  * Env var required: AI_GATEWAY_API_KEY
  */
 
-// Confirm the exact slug in your Vercel AI Gateway model list before launch —
-// these move. Candidates: "openai/gpt-image-2" (best prompt adherence),
-// "google/gemini-2.5-flash-image" (cheapest), "black-forest-labs/flux-2-pro".
+/* Checked against the gateway's public model list (GET
+   https://ai-gateway.vercel.sh/v1/models, no key needed): openai/gpt-image-2 is
+   there, type "image", text in and image out. So is google/gemini-2.5-flash-image
+   and the checker's google/gemini-2.5-flash-lite. Other candidates if this one
+   disappoints: openai/gpt-image-1.5, bfl/flux-2-pro (note the owner is "bfl",
+   not "black-forest-labs"), bytedance/seedream-5.0-pro, recraft/recraft-v4-pro.
+   These move — re-check the list rather than trusting this comment. */
 const MODEL = "openai/gpt-image-2";
 
 // Refinement needs the previous panel as an input image, and generateImage()
@@ -459,7 +463,11 @@ async function twice<T>(
     } catch (err) {
       const t = diagnose(err);
       report(label, t, Date.now() - started, `attempt=${attempt}/2`);
-      if (attempt === 2) throw err;
+      /* A rate limit does not clear in the milliseconds it takes to ask again,
+         and asking again is one more request against the same cap. Hand it
+         straight back with its retry-after and let the caller do the waiting —
+         it has no execution limit to run into and this function does. */
+      if (t.kind === "rate-limit" || attempt === 2) throw err;
     }
   }
   return null;
