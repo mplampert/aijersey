@@ -562,8 +562,8 @@ footer{
       </div>
       <div>
         <h3>What if I don&rsquo;t like the proof?</h3>
-        <p>Then nothing gets built. Tell us what to change and the proof is redrawn &mdash;
-          it only goes to production once you&rsquo;ve approved it.</p>
+        <p>We&rsquo;ll revise it until it&rsquo;s right. If it still isn&rsquo;t what you pictured,
+          we refund you in full. Nothing goes into production until you approve it.</p>
       </div>
       <div>
         <h3>Can I use my own logo?</h3>
@@ -766,8 +766,10 @@ footer{
     </div>
 
     <button class="cta" id="checkout" disabled>Add a roster to continue</button>
-    <p class="note">Placing the order costs nothing. Your factory proof comes within 48 hours,
-      and a payment link follows once you approve it &mdash; in full, and not before.</p>
+    <p class="note">Paid in full for goods; shipping is quoted separately once your order is boxed.
+      Your factory proof comes within 48 hours.</p>
+    <p class="note"><b>Not what you pictured?</b> We&rsquo;ll revise the proof until it&rsquo;s right.
+      If it still isn&rsquo;t, we refund you in full. Nothing goes into production until you approve.</p>
     <p class="msg" id="coMsg"></p>
   </section>
 
@@ -2189,6 +2191,12 @@ function drawOrder(valid){
   });
   const t=document.createElement('div');t.className='line total';
   t.innerHTML=`<span>Total</span><span>${money(total)}</span>`;box.append(t);
+  /* Said next to the number rather than in the small print. Shipping is quoted
+     by a person once there is a box to weigh, so there is no estimate to show
+     and pretending otherwise would make the total a lie. */
+  const ship=document.createElement('div');ship.className='line';
+  ship.innerHTML='<span style="color:var(--dim)">Shipping</span>'
+    +'<span style="color:var(--dim)">Quoted separately</span>';box.append(ship);
 
   const btn=$('#checkout');
   btn.disabled=!valid;
@@ -2197,7 +2205,7 @@ function drawOrder(valid){
      nobody told them about. */
   const short = n && n<CFG.moq ? CFG.moq-n : 0;
   btn.textContent = valid
-    ? 'Place this order — '+money(total)+', nothing charged yet'
+    ? 'Pay '+money(total)+' and start your proof'
     : short ? 'Add '+short+' more to reach the '+CFG.moq+'-jersey minimum'
     : (n ? 'Fix the roster to continue' : 'Add a roster to continue');
 }
@@ -2210,7 +2218,7 @@ $('#checkout').onclick=async()=>{
   const v=S.vIndex<0?null:S.versions[S.vIndex];
   const email=$('#email').value.trim();
   if(!email){
-    msg.className='msg bad';msg.textContent='We need an email address to send your proof to.';
+    msg.className='msg bad';msg.textContent='We need an email address for your receipt and your proof.';
     $('#email').focus();return;
   }
   /* Checked here as well as on the button, because the button is the thing
@@ -2223,7 +2231,7 @@ $('#checkout').onclick=async()=>{
     return;
   }
   const was=btn.textContent;
-  btn.disabled=true;btn.textContent='Placing your order…';
+  btn.disabled=true;btn.textContent='Opening secure checkout…';
   msg.className='msg';msg.textContent='';
   try{
     const payload={
@@ -2244,13 +2252,14 @@ $('#checkout').onclick=async()=>{
       body:JSON.stringify(payload)
     }).catch(()=>{throw new Error('We couldn\'t reach the server — check your connection and try again.');});
     const d=await res.json().catch(()=>null);
-    if(!res.ok) throw new Error((d&&d.error)||'We couldn\'t place that order just now — try again in a moment.');
+    if(!res.ok||!d||!d.url)
+      throw new Error((d&&d.error)||'We couldn\'t open checkout just now — try again in a moment.');
 
-    msg.className='msg ok';
-    msg.textContent='Order placed'+(v&&v.code?' against design '+v.code:'')+' — '+(d&&d.totalText||'')
-      +'. Nothing has been charged. Your factory proof comes within 48 hours, and the payment link'
-      +' follows once you approve it.';
-    btn.textContent='Order placed';
+    /* Off to Stripe. The order is already on file, so somebody who backs out
+       here has lost nothing and pressing the button again brings them back to
+       the same session. */
+    msg.className='msg ok';msg.textContent='Taking you to secure checkout…';
+    location.assign(d.url);
   }catch(err){
     msg.className='msg bad';msg.textContent=err.message;
     btn.disabled=false;btn.textContent=was;
@@ -2268,12 +2277,13 @@ $('#checkout').onclick=async()=>{
   const msg=$('#coMsg');
   if(paid){
     msg.className='msg ok';
-    msg.textContent='Payment received for design '+paid+' — thank you. Production starts now,'
-      +' and your receipt is on its way from Stripe.';
+    msg.textContent='Payment received for design '+paid+' — thank you. Your confirmation is on its'
+      +' way, and your factory proof follows within 48 hours. Nothing goes into production until'
+      +' you approve it.';
   }else{
     msg.className='msg';
-    msg.textContent='No payment was taken. Your payment link still works — it is in the email'
-      +' we sent when your proof was approved.';
+    msg.textContent='No payment was taken and your order is still here — press the button again'
+      +' when you are ready.';
   }
   msg.scrollIntoView({behavior:'smooth',block:'center'});
 })();

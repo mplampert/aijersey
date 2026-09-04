@@ -237,42 +237,49 @@ export async function sendDesign(mail: DesignMail): Promise<Sent> {
   }
 }
 
-/* ---------------- the payment link ---------------- */
+/* ---------------- the order confirmation ---------------- */
 
-export type PaymentMail = {
+export type OrderMail = {
   to: string;
-  /** The Stripe Checkout URL. Good for 24 hours — see approve-proof. */
-  url: string;
   code: string;
   team: string | null;
-  /** Priced lines, in cents, exactly as Stripe will charge them. */
+  /** Priced lines, in cents, exactly as Stripe charged them. */
   lines: { label: string; unit: number; qty: number; total: number }[];
+  /** Cents. Goods only — shipping is quoted separately, by a person. */
   total: number;
 };
 
 const usd = (cents: number) =>
   (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
+/* The promise that makes paying before the proof reasonable, said in the same
+   words on the order step and here. Somebody who has just been charged several
+   hundred dollars for a jersey they have not seen redrawn should find this in
+   their inbox without having to go looking for it. */
+const PROMISE_LINES = [
+  "Not what you pictured? We'll revise the proof until it's right. If it still",
+  "isn't, we refund you in full. Nothing goes into production until you approve.",
+];
+
 /** Exported so the mail can be read without sending one. */
-export function renderPaymentMail(mail: PaymentMail) {
+export function renderOrderMail(mail: OrderMail) {
   const rows = mail.lines
     .map((l) => `${l.label} · ${l.qty} × ${usd(l.unit)}   ${usd(l.total)}`)
     .join("\n");
 
   const text = [
-    `Your proof is approved — here's the payment link.`,
+    `Your order is in — thank you.`,
     ``,
     `Design ${mail.code}${mail.team ? ` · ${mail.team}` : ""}`,
     ``,
     rows,
-    `Total   ${usd(mail.total)}`,
+    `Paid   ${usd(mail.total)}`,
+    `Shipping quoted separately — not included above.`,
     ``,
-    `Pay in full: ${mail.url}`,
+    `What happens now: our factory redraws your design for production and sends`,
+    `you a proof within 48 hours. You approve it, and then it gets made.`,
     ``,
-    `This link is good for 24 hours. If it has expired by the time you get to`,
-    `it, reply to this email and we'll send a fresh one — nothing is lost.`,
-    ``,
-    `Production starts once payment lands.`,
+    ...PROMISE_LINES,
     ``,
     `Marty's Jerseys`,
   ].join("\n");
@@ -289,23 +296,29 @@ export function renderPaymentMail(mail: PaymentMail) {
   const html = `<div style="margin:0;padding:24px;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:12px;border:1px solid #e3e5e9">
     <tr><td style="padding:28px 28px 0">
-      <h1 style="margin:0 0 6px;font-size:19px;line-height:1.3;color:#14161a">Your proof is approved.</h1>
-      <p style="margin:0;font-size:15px;line-height:1.5;color:#5b6270">Design ${escape(mail.code)}${mail.team ? ` · ${escape(mail.team)}` : ""} — production starts once payment lands.</p>
+      <h1 style="margin:0 0 6px;font-size:19px;line-height:1.3;color:#14161a">Your order is in — thank you.</h1>
+      <p style="margin:0;font-size:15px;line-height:1.5;color:#5b6270">Design ${escape(mail.code)}${mail.team ? ` · ${escape(mail.team)}` : ""}</p>
     </td></tr>
     <tr><td style="padding:18px 28px 0">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
         ${lineHtml}
-        <tr><td style="padding:12px 0 0;border-top:1px solid #e3e5e9;font-size:15px;font-weight:700;color:#14161a">Total</td>
+        <tr><td style="padding:12px 0 0;border-top:1px solid #e3e5e9;font-size:15px;font-weight:700;color:#14161a">Paid</td>
             <td style="padding:12px 0 0;border-top:1px solid #e3e5e9;font-size:15px;font-weight:700;color:#14161a;text-align:right;font-variant-numeric:tabular-nums">${usd(mail.total)}</td></tr>
+        <tr><td colspan="2" style="padding:6px 0 0;font-size:13px;color:#8b929e">Shipping quoted separately — not included above.</td></tr>
       </table>
     </td></tr>
     <tr><td style="padding:20px 28px 0">
-      <a href="${escape(mail.url)}" style="display:block;background:#e4652a;color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;text-align:center;padding:13px 20px;border-radius:9px">Pay ${usd(mail.total)}</a>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f4f5f7;border-radius:10px">
+        <tr><td style="padding:14px 18px">
+          <div style="font-size:14px;line-height:1.55;color:#14161a"><b>What happens now.</b> Our factory redraws your design for
+          production and sends you a proof within 48 hours. You approve it, and then it gets made.</div>
+        </td></tr>
+      </table>
     </td></tr>
     <tr><td style="padding:14px 28px 26px">
-      <p style="margin:0;font-size:13px;line-height:1.5;color:#8b929e">
-        This link is good for 24 hours. If it has expired by the time you get to it, reply to this
-        email and we'll send a fresh one — nothing is lost.
+      <p style="margin:0;font-size:14px;line-height:1.55;color:#5b6270">
+        Not what you pictured? We'll revise the proof until it's right. If it still isn't, we refund you
+        in full. Nothing goes into production until you approve.
       </p>
     </td></tr>
   </table>
@@ -315,20 +328,20 @@ export function renderPaymentMail(mail: PaymentMail) {
 }
 
 /**
- * Sends the customer the link that takes their money.
+ * The receipt, sent when Stripe says the money landed.
  *
- * Sent once the proof is approved and never before — see approve-proof. Like
- * every other send here it never throws: the session exists in Stripe and is
- * written on the record before this runs, so a provider outage costs an email
- * and the link can be re-sent by approving again.
+ * Sent from the webhook rather than from the browser coming back: a customer
+ * who pays and closes the tab has still paid, and is still owed this. Never
+ * throws — the payment and the order are on record before it runs, and a failed
+ * send costs an email, not an order.
  */
-export async function sendPaymentLink(mail: PaymentMail): Promise<Sent> {
+export async function sendOrderConfirmation(mail: OrderMail): Promise<Sent> {
   if (!process.env.RESEND_API_KEY) {
-    console.error("send-payment: RESEND_API_KEY is not set, no mail sent");
+    console.error("send-order: RESEND_API_KEY is not set, no mail sent");
     return { ok: false, status: null, message: "RESEND_API_KEY is not set" };
   }
   const began = Date.now();
-  const { text, html } = renderPaymentMail(mail);
+  const { text, html } = renderOrderMail(mail);
   try {
     const res = await fetch(ENDPOINT, {
       method: "POST",
@@ -340,7 +353,7 @@ export async function sendPaymentLink(mail: PaymentMail): Promise<Sent> {
         from: FROM,
         to: [mail.to],
         ...(REPLY_TO ? { reply_to: REPLY_TO } : {}),
-        subject: `Your jerseys are approved — ${usd(mail.total)} to start production`,
+        subject: `Order confirmed — ${mail.code}${mail.team ? ` · ${mail.team}` : ""}`,
         text,
         html,
       }),
@@ -356,15 +369,15 @@ export async function sendPaymentLink(mail: PaymentMail): Promise<Sent> {
         // Not JSON.
       }
       message = message.replace(/\s+/g, " ").trim();
-      console.error(`send-payment FAIL status=${res.status} ${took}s to=${mail.to} code=${mail.code} :: ${message}`);
+      console.error(`send-order FAIL status=${res.status} ${took}s to=${mail.to} code=${mail.code} :: ${message}`);
       return { ok: false, status: res.status, message };
     }
     const sent = await res.json().catch(() => null);
-    console.log(`send-payment OK ${took}s to=${mail.to} code=${mail.code} total=${usd(mail.total)} id=${sent?.id ?? "-"}`);
+    console.log(`send-order OK ${took}s to=${mail.to} code=${mail.code} paid=${usd(mail.total)} id=${sent?.id ?? "-"}`);
     return { ok: true };
   } catch (err) {
     const message = String((err as Error)?.message ?? err).replace(/\s+/g, " ").trim();
-    console.error(`send-payment FAIL status=- to=${mail.to} code=${mail.code} :: ${message}`);
+    console.error(`send-order FAIL status=- to=${mail.to} code=${mail.code} :: ${message}`);
     return { ok: false, status: null, message };
   }
 }

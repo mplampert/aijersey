@@ -322,12 +322,16 @@ mail that did not go.
 
 ## Money
 
-Nothing is charged at the concept stage, and nothing is charged when the order
-is placed. The flow is: concept → roster and details → factory redraws it →
-customer approves that proof → **pay in full** → production. Payment is the
-step after approval because that is the promise the page makes on every screen
-it has — nothing is built until you approve it, so nothing is billed until then
-either.
+Paid in full at checkout, for goods only. The flow is: concept → roster and
+details → **pay** → factory redraws it → customer approves the proof →
+production.
+
+Paying before the proof exists is only reasonable because of what is promised
+next to the button, in the FAQ, and in the confirmation email, in the same
+words each time: *we'll revise the proof until it's right; if it still isn't, we
+refund you in full; nothing goes into production until you approve.* That
+sentence is load-bearing — it is the answer to "what am I paying for, exactly?"
+and it should not be quietly softened.
 
 ### Prices
 
@@ -352,61 +356,70 @@ the page can show a running total as the roster is typed; **that copy is display
 only and has to match `pricing.ts`.** Change both or neither — a page that
 quotes one figure while the server charges another is the worst version of this.
 
+### Shipping is not calculated
+
+Not by the page, not by the server, not by Stripe. There is no estimate, no
+shipping line item and no `shipping_options` on the session. The order summary
+carries a **Shipping — quoted separately** row next to the total rather than in
+small print, Stripe's own page repeats it above the pay button via
+`custom_text`, and the confirmation email says it again under the amount. A
+total that turns out not to have been the total is the fastest way to lose
+somebody's trust, so it is said three times in the three places money is shown.
+
 ### The minimum, in three places
 
-The button says how many more are needed rather than "fix the roster", `validate()`
-won't enable it, and `place-order` refuses the request. The third one is the one
-that counts: a page can be edited by anyone with a browser, and a three-jersey
-order reaching the factory is a phone call and an apology.
+The button says how many more are needed rather than "fix the roster",
+`validate()` won't enable it, and `place-order` refuses the request. The third
+one is the one that counts: a page can be edited by anyone with a browser, and a
+three-jersey order reaching the factory is a phone call and an apology.
 
-### Placing the order
+### Checkout
 
 `api/place-order.ts`. Writes the roster, kit, contact details and the priced
-total to the design, sets **Status** to `Ordered` and **Payment status** to
-`Unpaid`, and takes no money. It refuses to touch an order that is already
-paid — a paid order changing underneath the payment is how somebody ends up
-with 40 jerseys they were charged for 12 of.
+total to the design, marks it `Unpaid`, opens a Stripe Checkout Session for the
+full amount and hands back the URL for the page to redirect to.
 
-### Asking for the money
+The order is on the record **before** the customer ever reaches Stripe. Somebody
+who pays and closes the tab, or whose webhook is slow, is still a customer we
+can find and still make jerseys for. The session id is written before the
+redirect too, so a payment can be matched to the row even if Stripe's webhook
+beats the function that opened the session.
 
-`api/approve-proof.ts`, `POST { code }` or `{ recordId }`.
+Backing out and pressing the button again returns the customer to the same
+session while it is still open and the total still matches — otherwise two live
+ways to pay one order exist and both of them work. An order already `Paid`
+refuses to be re-placed: a paid order changing underneath the payment is how
+somebody ends up with 40 jerseys they were charged for 12 of.
 
-**It does not approve anything.** Airtable is where a proof is approved — a
-person sets **Proof status** to `Approved` — and this refuses to run until that
-has happened. That is what makes it safe to leave open: it cannot conjure a
-payment demand out of nothing, only re-send one for an order a human already
-approved, to the address already on that order. Point an Airtable automation at
-it — when Proof status becomes Approved, POST the record id — and the flow runs
-itself.
-
-It prices the order from the record (never from the request), opens a Stripe
-Checkout Session for the full amount, writes **Stripe session id** and
-`Link sent`, and emails the customer the link.
-
-**A Checkout Session expires 24 hours after it is created.** That is Stripe's
-ceiling, not a choice. So the endpoint is re-runnable: it reads the session
-already on the record, reuses it while it is still open, and mints a fresh one
-when it isn't. Re-approving is how a customer gets another link, and the email
-says so. If that becomes a nuisance, the fix is a `/api/pay?…` redirect that
-mints a session on demand behind a token — an unexpiring link to a link.
+**Status is left alone here.** `Ordered` means paid for, and only the webhook
+says it.
 
 ### Getting told it was paid
 
-`api/stripe-webhook.ts`. The customer pays on Stripe's page, so nothing comes
-back through the browser that can be trusted with marking an order paid.
+`api/stripe-webhook.ts`. The customer pays on Stripe's page, so nothing that
+comes back through the browser can be trusted with marking money received —
+which is also why the confirmation email is sent from here rather than from the
+redirect back. Somebody who pays and closes the tab has still paid, and is still
+owed their receipt.
+
 Register the endpoint for `checkout.session.completed` and
-`checkout.session.async_payment_succeeded` and set `STRIPE_WEBHOOK_SECRET`.
-**Without it every paid order sits at `Link sent` forever** — the money arrives,
-Airtable never hears about it.
+`checkout.session.async_payment_succeeded`, and set `STRIPE_WEBHOOK_SECRET`.
+**Without it the money still arrives and nothing else happens** — no order is
+marked `Ordered`, no payment is recorded, and no confirmation goes out.
+
+On a paid session it writes **Payment status** `Paid`, the **Stripe session id**,
+the amount actually charged into **Order total**, and **Status** `Ordered`, then
+emails the confirmation from `noreply@send.lampertsusa.com` — priced from the
+record, because the session would need its line items expanded to say the same
+thing.
 
 Signatures are checked against the raw body before anything is parsed, with a
 five-minute tolerance so a captured delivery can't be replayed. A delivery that
-fails that check gets a 400. Anything that passes it gets a 2xx even when the
+fails that check gets a 400. Anything that passes gets a 2xx even when the
 Airtable write fails, because Stripe retries a non-2xx for days and re-delivery
-will not fix a bad field id — that belongs in the log.
-
-The webhook also compares what Stripe charged against **Order total** and warns
-when they differ, which means the roster changed while a payment link was live.
+will not fix a bad field id — that belongs in the log. The webhook also compares
+what Stripe charged against **Order total** and warns when they differ, which
+means the roster changed while a checkout was open.
 
 ### On the record
 
@@ -414,9 +427,9 @@ Three fields on **Designs**, created for this:
 
 | Field | |
 |---|---|
-| **Payment status** | `Unpaid` → `Link sent` → `Paid`, plus `Refunded` for the by-hand case |
-| **Stripe session id** | `cs_live_…`, overwritten whenever a fresh link is minted |
-| **Order total** | priced by the server; rewritten by the webhook to what was really charged |
+| **Payment status** | `Unpaid` at checkout → `Paid` by the webhook. `Refunded` is by hand. |
+| **Stripe session id** | `cs_live_…`, written before the redirect |
+| **Order total** | goods only; rewritten by the webhook to what was really charged |
 
 ## Reading a failed generation
 

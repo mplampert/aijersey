@@ -8,11 +8,12 @@ import { money, type Quote } from "./pricing.js";
  * avoids dependencies a serverless function can do without — the Stripe library
  * is a large cold start to buy a fetch wrapper.
  *
- * Nothing here is called at the concept stage. A Checkout Session is minted
- * once the customer has approved their factory proof and not a moment earlier,
- * which is the whole shape of this business: the jersey is redrawn by a human,
- * the customer says yes to what will actually be made, and only then does money
- * move.
+ * A Checkout Session is minted when the customer places their order, and it
+ * charges for goods only. Shipping is quoted separately, by a person, once
+ * there is a box to weigh — so it is not a line item, not an estimate, and not
+ * silently folded into the jersey price. The session says so on Stripe's own
+ * page as well as on ours, because a total that turns out not to have been the
+ * total is the fastest way to lose somebody's trust.
  *
  * Env vars required:
  *   STRIPE_SECRET_KEY      — sk_live_… or sk_test_…
@@ -113,7 +114,7 @@ export type Order = {
 };
 
 /**
- * The session the payment link points at.
+ * The session the customer is sent to, charging for goods only.
  *
  * One line item per thing being bought, priced inline rather than against a
  * Stripe Product: the price of a jersey is a number this repo owns, and
@@ -129,10 +130,17 @@ export type Order = {
 export async function createSession(order: Order): Promise<StripeReply<Session>> {
   const form = new URLSearchParams({
     mode: "payment",
-    // Stripe sends them here when they are done; the page reads the code out of
-    // the query and says what happened.
-    success_url: `${order.origin}/?paid=${encodeURIComponent(order.code)}`,
+    /* Stripe sends them here when they are done. The session id comes back in
+       the URL — Stripe substitutes that literal — so the page can confirm the
+       payment against Stripe rather than believing a query string. */
+    success_url:
+      `${order.origin}/?paid=${encodeURIComponent(order.code)}&session={CHECKOUT_SESSION_ID}`,
     cancel_url: `${order.origin}/?payment=cancelled&d=${encodeURIComponent(order.code)}`,
+    /* On Stripe's page, above the pay button. The customer is about to be
+       charged a total that does not include getting the boxes to them, and
+       that has to be said where they are paying, not only where they ordered. */
+    "custom_text[submit][message]":
+      "Shipping is quoted separately once your order is boxed — it is not included in this total.",
     customer_email: order.email,
     client_reference_id: order.recordId,
     "metadata[record_id]": order.recordId,

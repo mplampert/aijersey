@@ -1,17 +1,24 @@
 // Compiled output is .js, and the runtime resolves these specifiers verbatim.
-import { FIELD, PAY_PAID, patchFields, readFields } from "./save-design.js";
+import { FIELD, PAY_PAID, STATUS_ORDERED, patchFields, readFields } from "./save-design.js";
+import { sendOrderConfirmation } from "./send-design.js";
 import { verifySignature } from "./stripe.js";
+import { quote } from "./pricing.js";
 
 /**
  * POST /api/stripe-webhook
  *
- * How Payment status ever becomes Paid.
+ * How an order ever becomes Ordered, and how the customer gets their receipt.
  *
- * approve-proof gets as far as "Link sent" and then stops knowing anything: the
- * customer pays on Stripe's page, not on ours, and nothing comes back through
- * the browser that can be trusted with that. Stripe tells us instead, here.
+ * place-order gets as far as opening a Checkout Session and then stops knowing
+ * anything: the customer pays on Stripe's page, not on ours, and nothing that
+ * comes back through the browser can be trusted with marking money received.
+ * Stripe tells us instead, here — which is also why the confirmation email is
+ * sent from this endpoint and not from the redirect back. Somebody who pays and
+ * closes the tab has still paid, and is still owed their receipt.
+ *
  * Without this endpoint registered the flow still works and still takes money —
- * Airtable just never finds out, and every paid order sits at Link sent.
+ * Airtable never finds out, no order is marked Ordered, and nobody gets a
+ * confirmation.
  *
  * Register it in the Stripe dashboard for `checkout.session.completed` and
  * `checkout.session.async_payment_succeeded`, and put the signing secret in
@@ -98,15 +105,45 @@ export async function POST(request: Request): Promise<Response> {
     // What was really charged, so the row matches the receipt rather than the
     // quote it was generated from.
     [FIELD.orderTotal]: paid / 100,
+    /* Ordered means paid for. place-order deliberately leaves Status alone, so
+       this is the only thing that ever writes it — a row that says Ordered has
+       money behind it. */
+    [FIELD.status]: STATUS_ORDERED,
   });
   if (snag) {
     // Answered 2xx anyway — see the note at the top. Retrying will not fix this.
     console.error(`stripe-webhook: ${code} paid but NOT filed against ${recordId} :: ${snag.message}`);
-    return Response.json({ received: true, filed: false });
   }
 
-  console.log(`stripe-webhook OK ${type} ${code} record=${recordId} paid=${paid} session=${session.id}`);
-  return Response.json({ received: true, filed: true });
+  /* The receipt. Priced from the record rather than from the session, because
+     the record is where the roster and the kit are and the session would need
+     expanding to get its line items back. Both were priced by the same module
+     from the same numbers, and the amount above is checked against Stripe's. */
+  const to = (on?.[FIELD.email] || "").trim();
+  let emailed = false;
+  if (to) {
+    const q = quote(
+      Number(on?.[FIELD.rosterCount] ?? 0),
+      Array.isArray(on?.[FIELD.kit]) ? on[FIELD.kit] : [],
+    );
+    const sent = await sendOrderConfirmation({
+      to,
+      code,
+      team: (on?.[FIELD.team] || "").trim() || null,
+      lines: q.lines,
+      // What Stripe took, not what we quoted, on the off chance they differ.
+      total: paid,
+    });
+    emailed = sent.ok;
+  } else {
+    console.error(`stripe-webhook: ${code} paid but has no email on file, no confirmation sent`);
+  }
+
+  console.log(
+    `stripe-webhook OK ${type} ${code} record=${recordId} paid=${paid} ` +
+    `session=${session.id} filed=${snag ? "no" : "yes"} emailed=${emailed ? "yes" : "no"}`,
+  );
+  return Response.json({ received: true, filed: !snag, emailed });
 }
 
 export async function GET(): Promise<Response> {

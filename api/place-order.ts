@@ -1,33 +1,37 @@
 // Compiled output is .js, and the runtime resolves these specifiers verbatim.
 import {
-  EMAIL, FIELD, PAY_UNPAID, STATUS_ORDERED,
+  EMAIL, FIELD, PAY_PAID, PAY_UNPAID,
   normalPhone, patchFields, readFields, recordIdFor, rosterText,
   type Body,
 } from "./save-design.js";
+import { createSession, readSession, stillGood, type Session } from "./stripe.js";
 import { KIT, MOQ, money, quote, refuse } from "./pricing.js";
 
 /**
  * POST /api/place-order
  *
- * The order, with no money in it.
+ * The end of the customer's sitting: the roster, the kit, who they are, and
+ * then Stripe.
  *
- * This is the end of what the customer does in one sitting: the roster, the
- * kit, who they are and how to reach them. It files all of that against the
- * design and marks the row Ordered, and it does not charge anybody. Payment
- * comes later and somewhere else — the factory redraws the jersey, the customer
- * approves that proof, and approve-proof is what asks for money. Taking payment
- * here would be charging for a garment nobody has agreed to yet.
+ * Everything they have entered goes onto the design first, then a Checkout
+ * Session is opened for the full amount and its URL handed back for the page to
+ * redirect to. The order is on record before the customer ever reaches Stripe,
+ * so somebody who pays and closes the tab, or whose webhook is slow, is a
+ * customer we can still find and still make jerseys for.
  *
- * The total is written all the same, priced by pricing.ts from the roster count
- * and the kit. It is what the customer was shown and what the Stripe session
- * will charge, and having it on the row means the two can be compared later
- * without recomputing a price that may since have changed.
+ * **Goods only.** Shipping is quoted separately by a person once there is a box
+ * to weigh; it is not a line item and not an estimate. Said on the order step,
+ * said again on Stripe's own page.
  *
- * The minimum is enforced here as well as on the page. The page can be edited
- * by anybody with a browser, and an order of three jerseys that reaches the
- * factory is a phone call and an apology.
+ * The minimum is enforced here as well as on the page, and this is the one that
+ * counts: a page can be edited by anyone with a browser, and a three-jersey
+ * order reaching the factory is a phone call and an apology.
  *
- * Env vars required: AIRTABLE_TOKEN, AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID.
+ * Status stays where it is. Ordered means paid for, and that is the webhook's
+ * word to say — see stripe-webhook.
+ *
+ * Env vars required: STRIPE_SECRET_KEY, AIRTABLE_TOKEN, AIRTABLE_BASE_ID,
+ * AIRTABLE_TABLE_ID.
  */
 
 type OrderBody = {
@@ -42,6 +46,18 @@ type OrderBody = {
   kit?: string[];
 };
 
+function origin(request: Request): string {
+  const configured = (process.env.SITE_URL || "").replace(/\/+$/, "");
+  if (configured) return configured;
+  const sent = request.headers.get("origin");
+  if (sent) return sent.replace(/\/+$/, "");
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    return "";
+  }
+}
+
 export async function POST(request: Request): Promise<Response> {
   let body: OrderBody;
   try {
@@ -53,7 +69,7 @@ export async function POST(request: Request): Promise<Response> {
   const email = (body.email || "").trim();
   if (!EMAIL.test(email)) {
     return Response.json(
-      { error: "We need an email address to send your proof to — check it and try again." },
+      { error: "We need an email address for your receipt and your proof — check it and try again." },
       { status: 400 },
     );
   }
@@ -79,24 +95,22 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  /* Refusing to re-place an order that is already paid for. Everything else is
-     a legitimate edit — a roster corrected before the proof goes out is exactly
-     what this flow is for — but a paid order changing underneath the payment
-     is how somebody ends up with 40 jerseys they were charged for 12 of. */
   const on = await readFields(recordId);
-  if (on?.[FIELD.payment] === "Paid") {
+  if (on?.[FIELD.payment] === PAY_PAID) {
     return Response.json(
-      { error: "This order is already paid for. Get in touch and we'll change it by hand." },
+      { error: "This order is already paid for. Get in touch and we'll change it by hand.", paid: true },
       { status: 409 },
     );
   }
 
+  /* On the record before Stripe sees it. If the customer pays and the webhook
+     never lands, this is what is left to work from — and it is the roster the
+     factory redraws either way. */
   const fields: Record<string, unknown> = {
     [FIELD.email]: email,
     [FIELD.roster]: rosterText(roster),
     [FIELD.rosterCount]: roster.length,
     [FIELD.kit]: kit,
-    [FIELD.status]: STATUS_ORDERED,
     // Cents everywhere but here: the Airtable column is currency, in dollars.
     [FIELD.orderTotal]: q.total / 100,
     [FIELD.payment]: PAY_UNPAID,
@@ -114,14 +128,63 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
+  /* Reuse before minting. Somebody who backs out of Stripe and presses the
+     button again should land on the session they already have, or two live
+     ways to pay the same order exist and both of them work. A changed roster
+     changes the total, which is what disqualifies the old one. */
+  const existing = (on?.[FIELD.stripeSession] || "").trim();
+  let session: Session | null = null;
+  if (existing) {
+    const found = await readSession(existing);
+    if (found.ok && stillGood(found.data) && found.data.amount_total === q.total) {
+      session = found.data;
+      console.log(`place-order: reusing open session ${existing}`);
+    }
+  }
+  if (!session) {
+    const made = await createSession({
+      quote: q,
+      recordId,
+      code: on?.[FIELD.code] ?? "",
+      email,
+      team: team || (on?.[FIELD.team] ?? null),
+      origin: origin(request),
+    });
+    if (!made.ok) {
+      /* The order is filed and nothing has been charged. Worth being plain
+         about that: the customer's work is not lost, only the payment page is. */
+      return Response.json(
+        {
+          error: "We couldn't open the payment page just now. Your order is saved — try again in a moment.",
+          detail: made.message,
+        },
+        { status: 502 },
+      );
+    }
+    session = made.data;
+  }
+
+  if (!session.url) {
+    return Response.json(
+      { error: "Stripe gave us a session with no payment page on it. Your order is saved." },
+      { status: 502 },
+    );
+  }
+
+  // Written before the redirect, so the webhook has something to match even if
+  // the customer pays faster than this function finishes.
+  await patchFields(recordId, { [FIELD.stripeSession]: session.id });
+
   console.log(
     `place-order OK ${recordId} players=${roster.length} kit=${kit.join("|") || "-"} ` +
-    `total=${money(q.total)} unpaid`,
+    `total=${money(q.total)} session=${session.id}`,
   );
   return Response.json({
     ok: true,
+    url: session.url,
+    sessionId: session.id,
     players: roster.length,
-    lines: q.lines.map((l) => ({ label: l.label, unit: l.unit, qty: l.qty, total: l.total })),
+    lines: q.lines,
     total: q.total,
     totalText: money(q.total),
   });
