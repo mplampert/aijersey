@@ -183,298 +183,47 @@ button.ghost:hover{border-color:var(--dim)}
   </div>
 
   <div class="stage">
-    <div class="frame checker" id="frame"><canvas id="out" width="1500" height="1500"></canvas></div>
+    <div class="frame checker" id="frame"></div>
     <p class="note" id="status">Loading the garment…</p>
     <p class="err" id="err" hidden></p>
   </div>
 </main>
 
-<script>
-/* Flat artwork onto a fixed garment.
+<script type="module">
+/* The compositor's UI.
  *
- * The garment is a real 3D render and never changes; only the artwork does.
- * That is the whole inversion this tool exists for — an image generator asked
- * for "a hockey jersey" returns a different garment every time, so the garment
- * is taken out of its hands and it is asked for a flat panel instead.
- *
- * Everything below is measured off the five files in ASSETS.dir and re-verified
- * against their pixels; see the numbers in MEASURED. */
-
-const ASSETS = {
-  dir:'/public/mockup/front/',
-  base:'Base.png',
-  masks:{
-    body:'mask-body-front.png',
-    shoulders:'mask-shoulders.png',
-    sleeves:'mask-sleeves.png',
-    collar:'mask-collar.png',
-  },
-};
-
-const CANVAS = 1500;                                  // every asset is 1500 x 1500
-const GARMENT = {x0:234, y0:97, x1:1251, y1:1398};    // Base.png alpha bounding box
-const SHADE_PIVOT = 144;                              // median luminance inside the garment
-
-/* Base.png is neutral to within 3 levels across the whole garment, so the red
-   channel is the luminance and no conversion is needed.
-
-   The mid-tone is 144, not 128. Overlay and soft-light both pivot at 128, so
-   the render is remapped around that before it is used as a shading layer —
-   without it every mockup comes out washed out. */
-
-/* The neck opening: dark mesh inside the collar, deliberately in none of the
-   four masks, and no artwork may reach it. The one part of the garment the
-   fill below has to be told to leave alone. */
-const NECK = {x0:606, y0:148, x1:893, y1:240};
-
-/* Painted in this order; collar last because it sits over everything it
-   touches. `fill` is not a mask on disk — see buildFill. */
-const ORDER = ['body','shoulders','sleeves','collar'];
-const PAINT = ['fill', ...ORDER];
-
-const NAMES = {body:'Body', shoulders:'Shoulder yoke', sleeves:'Sleeves', collar:'Collar'};
+ * The render itself lives in ./render.js, because the order page needs the same
+ * one: a customer's concept is the same panel through the same masks. This file
+ * is the controls around it.
+ */
+import {
+  CANVAS, GARMENT, ORDER, NAMES, DEFAULTS,
+  newSpec, newTransform, loadGarment, loadImage,
+} from './render.js';
 
 const $ = s => document.querySelector(s);
-const clamp = (v,a,b) => v<a?a:v>b?b:v;
 
 /* ---------------- state ---------------- */
-/* A transform is per artwork source: the master in unified mode, and one each
-   in per-region mode. scale 1 means "cover the garment", not "cover the canvas". */
-const newXf = () => ({scale:1, x:0, y:0, rot:0, tile:false});
-
-const DEFAULTS = {
-  body:      {src:'art',   color:'#c8102e'},
-  shoulders: {src:'art',   color:'#141619'},
-  sleeves:   {src:'art',   color:'#141619'},
-  /* Pattern across the rib almost always looks wrong, so the collar starts
-     solid in both modes. It can still be switched to artwork. */
-  collar:    {src:'color', color:'#141619'},
-};
-
+/* Exactly what render() takes, plus the two things only the UI cares about:
+   which background sits behind the preview, and what the files were called. */
 let S;
 function freshState(){
-  S = {
-    mode:'unified', art:null, artName:'', contrast:1, blend:'overlay', bg:'checker',
-    xf:newXf(),
-    regions:Object.fromEntries(ORDER.map(k=>
-      [k,{src:DEFAULTS[k].src, color:DEFAULTS[k].color, img:null, name:'', xf:newXf()}])),
-  };
+  S = newSpec();
+  S.bg = 'checker';
+  S.artName = '';
+  ORDER.forEach(k=>{ S.regions[k].name = ''; });
 }
 freshState();
 
-/* ---------------- the garment ---------------- */
-const out = $('#out'), outCtx = out.getContext('2d');
-let baseImg = null;          // also the final clip: it defines the silhouette
-let shadeCv = null, shadeCtx = null, basePixels = null, shadeImg = null;
-const MASK = {};             // region key -> offscreen canvas, alpha = coverage
-const REG  = {};             // region key -> offscreen canvas the region paints into
-let ready = false;
-
-function offscreen(){
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = CANVAS;
-  return cv;
-}
-function loadImg(src){
-  return new Promise((ok,fail)=>{
-    const im = new Image();
-    im.onload = ()=>ok(im);
-    im.onerror = ()=>fail(new Error(src+' did not load'));
-    im.src = src;
-  });
-}
-function pixels(img){
-  const cv = offscreen();
-  const c = cv.getContext('2d',{willReadFrequently:true});
-  c.drawImage(img,0,0);
-  return c.getImageData(0,0,CANVAS,CANVAS);
-}
-
-/* The four masks do not quite tile the garment. Along the right armhole seam
- * they leave a wedge — the shaded crease between body and sleeve, in neither
- * mask — up to 27px across and 13 at the median, plus around 600 sub-pixel
- * slivers on the other shared edges. Left alone every one of them shows through
- * as bare grey, and the armhole one is wide enough to read as a hairline down
- * the finished mockup.
- *
- * Dilating the body cannot reach across 27px without smearing it past its real
- * edge and under the collar and shoulder seams. So nothing is dilated and
- * nothing is guessed at: the whole silhouette is painted with the body's own
- * source and drawn underneath all four regions. Every one of them covers it, so
- * it can only ever show where none of them reach — which is exactly the gap,
- * and it takes the slivers with it in the same step.
- *
- * Underpainting the whole silhouette rather than only the gap is also what puts
- * the finished alpha exactly on Base.png's: a colour layer that is opaque right
- * to the edge survives the shading pass at full strength, and the one clip at
- * the end sets the rim. Subtract the masks from it instead and the rim is
- * assembled from two partial coverages, which lands up to 93 levels off.
- *
- * The neck opening is bare on purpose — the dark mesh inside the collar. Every
- * pixel of its rectangle is either that opening or already under the collar and
- * shoulder masks, so the rectangle comes straight back out. */
-function buildFill(baseAlpha){
-  const N = CANVAS*CANVAS;
-  const img = new ImageData(CANVAS,CANVAS);
-  for(let p=0;p<N;p++){
-    img.data[p*4] = img.data[p*4+1] = img.data[p*4+2] = 255;
-    img.data[p*4+3] = baseAlpha[p] ? 255 : 0;
-  }
-  for(let y=NECK.y0;y<=NECK.y1;y++)
-    for(let x=NECK.x0;x<=NECK.x1;x++) img.data[(y*CANVAS+x)*4+3] = 0;
-
-  const cv = offscreen();
-  cv.getContext('2d').putImageData(img,0,0);
-  return cv;
-}
-
-async function buildGarment(){
-  baseImg = await loadImg(ASSETS.dir+ASSETS.base);
-  if(baseImg.naturalWidth!==CANVAS || baseImg.naturalHeight!==CANVAS)
-    throw new Error('Base.png is '+baseImg.naturalWidth+'×'+baseImg.naturalHeight+
-                    ', and every measured constant in here assumes '+CANVAS+'×'+CANVAS+'.');
-
-  const baseData = pixels(baseImg);
-  basePixels = baseData.data;
-
-  const maskImgs = await Promise.all(ORDER.map(k=>loadImg(ASSETS.dir+ASSETS.masks[k])));
-  const maskData = maskImgs.map(pixels);
-
-  // Only the alpha channel of a mask means anything; the RGB is ignored.
-  const N = CANVAS*CANVAS;
-  const baseAlpha = new Uint8Array(N);
-  for(let p=0;p<N;p++) baseAlpha[p] = basePixels[p*4+3];
-  const alphas = maskData.map(d=>{
-    const a = new Uint8Array(N);
-    for(let p=0;p<N;p++) a[p] = d.data[p*4+3];
-    return a;
-  });
-
-  MASK.fill = buildFill(baseAlpha);
-
-  // A mask is used only for its alpha, so the RGB is flattened to white and
-  // the file's own antialiasing carried through as it stands.
-  ORDER.forEach((k,r)=>{
-    const img = maskData[r];
-    for(let p=0;p<N;p++){
-      img.data[p*4] = img.data[p*4+1] = img.data[p*4+2] = 255;
-      img.data[p*4+3] = alphas[r][p];
-    }
-    const cv = offscreen();
-    cv.getContext('2d').putImageData(img,0,0);
-    MASK[k] = cv;
-  });
-  PAINT.forEach(k=>{
-    const rc = offscreen();
-    REG[k] = {cv:rc, ctx:rc.getContext('2d')};
-  });
-
-  shadeCv = offscreen();
-  shadeCtx = shadeCv.getContext('2d');
-  shadeImg = shadeCtx.createImageData(CANVAS,CANVAS);
-  buildShade();
-
-  ready = true;
-  return true;
-}
-
-/* The shading layer: the render recentred on 128 so overlay and soft-light,
-   which both pivot there, land where the garment's own mid-tone is. */
-function buildShade(){
-  const src = basePixels, dst = shadeImg.data, k = S.contrast;
-  for(let i=0;i<src.length;i+=4){
-    const v = clamp(128 + (src[i]-SHADE_PIVOT)*k, 0, 255);
-    dst[i] = dst[i+1] = dst[i+2] = v;
-    dst[i+3] = src[i+3];
-  }
-  shadeCtx.putImageData(shadeImg,0,0);
-}
-
-/* ---------------- painting ---------------- */
-/* Scale 1 covers the garment's bounding box, not the 1500 canvas: fit to the
-   canvas and a third of the artwork lands outside the silhouette and is never
-   seen. Rotation and offset work from the centre of that same box. */
-function paintArt(ctx,img,xf){
-  const gw = GARMENT.x1-GARMENT.x0, gh = GARMENT.y1-GARMENT.y0;
-  const cover = Math.max(gw/img.naturalWidth, gh/img.naturalHeight);
-  const s = cover*xf.scale;
-  const w = img.naturalWidth*s, h = img.naturalHeight*s;
-
-  ctx.save();
-  ctx.translate((GARMENT.x0+GARMENT.x1)/2 + xf.x, (GARMENT.y0+GARMENT.y1)/2 + xf.y);
-  ctx.rotate(xf.rot*Math.PI/180);
-  if(xf.tile){
-    const pat = ctx.createPattern(img,'repeat');
-    pat.setTransform(new DOMMatrix([s,0,0,s,-w/2,-h/2]));
-    ctx.fillStyle = pat;
-    const r = CANVAS*1.6;          // covers the canvas at any rotation
-    ctx.fillRect(-r,-r,r*2,r*2);
-  }else{
-    ctx.drawImage(img,-w/2,-h/2,w,h);
-  }
-  ctx.restore();
-}
-
-/* What a region draws: the master artwork in unified mode, its own picture or
-   flat colour in per-region mode. A region set to artwork with nothing of its
-   own falls back to the master, so switching modes never empties the canvas. */
-function sourceFor(k){
-  // The gap under the seams takes whatever the body is showing.
-  const r = S.regions[k==='fill' ? 'body' : k];
-  if(S.mode==='unified'){
-    // The collar is the one region unified mode still lets go solid.
-    if(k==='collar' && r.src==='color') return {color:r.color};
-    return S.art ? {img:S.art, xf:S.xf} : {color:r.color};
-  }
-  if(r.src==='color') return {color:r.color};
-  const img = r.img || S.art;
-  return img ? {img, xf:r.img?r.xf:S.xf} : {color:r.color};
-}
-
-function paintRegion(k){
-  const {cv,ctx} = REG[k];
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.clearRect(0,0,CANVAS,CANVAS);
-
-  const src = sourceFor(k);
-  if(src.img) paintArt(ctx,src.img,src.xf);
-  else { ctx.fillStyle = src.color; ctx.fillRect(0,0,CANVAS,CANVAS); }
-
-  ctx.globalCompositeOperation = 'destination-in';
-  ctx.drawImage(MASK[k],0,0);
-  ctx.globalCompositeOperation = 'source-over';
-  return cv;
-}
-
-/* Flat colour first, then the render multiplied through it. Without that
-   second pass the output is a sticker cut to the shape of a jersey. */
-function render(){
-  if(!ready) return;
-  outCtx.setTransform(1,0,0,1,0,0);
-  outCtx.globalCompositeOperation = 'source-over';
-  outCtx.clearRect(0,0,CANVAS,CANVAS);
-
-  for(const k of PAINT) outCtx.drawImage(paintRegion(k),0,0);
-
-  outCtx.globalCompositeOperation = S.blend;
-  outCtx.drawImage(shadeCv,0,0);
-
-  /* The blend carries the shading layer's own alpha past the artwork's edge,
-     so the silhouette is cut again from the render that defined it. The colour
-     underneath is opaque to that edge, so this one clip is what sets the rim. */
-  outCtx.globalCompositeOperation = 'destination-in';
-  outCtx.drawImage(baseImg,0,0);
-  outCtx.globalCompositeOperation = 'source-over';
-}
+let garment = null;
 
 /* Sliders fire per pixel dragged and a render is five 1500² composites, so
    coalesce onto the frame. */
 let queued = false;
 function draw(){
-  if(queued) return;
+  if(!garment || queued) return;
   queued = true;
-  requestAnimationFrame(()=>{ queued = false; render(); });
+  requestAnimationFrame(()=>{ queued = false; garment.render(S); });
 }
 
 /* ---------------- controls ---------------- */
@@ -505,8 +254,7 @@ const contrast = $('#contrast');
 contrast.oninput = ()=>{
   S.contrast = parseFloat(contrast.value);
   $('#contrastVal').textContent = S.contrast.toFixed(2);
-  buildShade();
-  draw();
+  draw();   // render() rebuilds the shading layer when the value has moved
 };
 
 /* Transform controls. In unified mode there is one set, on the master; in
@@ -654,7 +402,7 @@ function takeArt(f,region){
   const r = new FileReader();
   r.onload = async ()=>{
     try{
-      const img = await loadImg(r.result);
+      const img = await loadImage(r.result);
       if(region){
         S.regions[region].img = img;
         S.regions[region].name = f.name;
@@ -710,13 +458,13 @@ $('#reset').onclick = ()=>{
   });
   $('#modeNote').textContent = 'One artwork across the whole garment, each region clipping the same draw.';
   $('#regionTitle').textContent = 'Artwork placement';
-  buildShade(); buildRegions(); draw(); note();
+  buildRegions(); draw(); note();
 };
 
 /* ---------------- export ---------------- */
 $('#export').onclick = ()=>{
-  if(!ready) return;
-  out.toBlob(b=>{
+  if(!garment) return;
+  garment.canvas.toBlob(b=>{
     const url = URL.createObjectURL(b);
     const a = document.createElement('a');
     a.href = url;
@@ -740,8 +488,13 @@ function note(){
 }
 
 buildRegions();
-buildGarment().then(()=>{
-  render();
+loadGarment().then(g=>{
+  garment = g;
+  /* The garment renders into its own canvas, so that canvas is what the page
+     shows and what the export reads — no third copy to keep in step. */
+  g.canvas.id = 'out';
+  $('#frame').append(g.canvas);
+  draw();
   note();
 }).catch(err=>{
   $('#status').textContent = 'The garment did not load.';

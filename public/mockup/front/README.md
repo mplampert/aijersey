@@ -51,10 +51,10 @@ which is why a plain rectangle is safe here.
 
 ## Replacing these
 
-The compositor reads its constants from the top of `mockup/index.html` —
-`CANVAS`, `GARMENT`, `SHADE_PIVOT`, `NECK`. A new render means re-measuring all
-four. `Base.png` at any size other than 1500 square is refused rather than
-silently misregistered.
+The constants live at the top of `mockup/render.js` — `CANVAS`, `GARMENT`,
+`SHADE_PIVOT`, `NECK`, and `CHEST` for where a crest goes. A new render means
+re-measuring all of them. `Base.png` at any size other than 1500 square is
+refused rather than silently misregistered.
 
 There is no back view. It needs its own asset set, and its own set of measured
 constants.
