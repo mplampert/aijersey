@@ -106,17 +106,30 @@ Tune `spacing`, `rateRetries` and `waitCap` in `CFG`.
 
 ## Email
 
-One email exists, and one thing triggers it: a customer typing an address into
-"Don't lose this design" and pressing the button. That save writes Email, Team
-and Phone to their row and then sends them their design code, the concept as an
-attachment, and a link that reopens it. Nothing else sends, and nothing sends
-unprompted — a palette or a roster patching the same row later does not re-send.
-
 `api/send-design.ts`, from `noreply@send.lampertsusa.com`. The domain has to be
-verified in Resend or every send is refused. The concept travels as an
-attachment rather than a link because Airtable's attachment URLs expire within
-hours and a customer opening the mail next week would find a hole where their
-jersey was.
+verified in Resend or every send is refused. Two things trigger it, both of them
+a customer typing their address and pressing a button. Nothing sends unprompted.
+
+**Saving.** "Don't lose this design" writes Email, Team and Phone, then emails
+back **every design from that session**, not just the one on screen — a customer
+generates three takes and all three are theirs. The address is written to every
+row in the session too, which is what makes the lookup below return all of them.
+A palette or a roster patching the same row later does not re-send.
+
+**Lookup.** "Saved a design here before?" takes an address and emails every
+design filed under it. Before this, the four-character code was the only route
+back to a design and nothing read the Email column at all — a customer who lost
+the code had lost the design. `api/email-designs.ts` answers the same way
+whether or not the address is on file: saying "no designs found" would turn it
+into a way to ask which addresses are real, and the person who owns the address
+finds out in their inbox either way.
+
+Each design in the mail gets its own code, its own thumbnail and its own reopen
+link. The pictures travel as attachments shown inline, not as links, because
+Airtable's attachment URLs expire within hours and a customer opening the mail
+next week would find holes where their jerseys were. They are Airtable's 768px
+thumbnails rather than the originals: a concept is 2.6MB and a session is three
+of them, and the thumbnail is 610KB and larger than it will ever be displayed.
 
 Sending is best-effort and never fails the save: the design and the address are
 on record before it runs, and the page says which happened rather than promising

@@ -73,6 +73,8 @@ function makeCode(): string {
 // filterByFormula matches on the field's name, not its id, and Code is the
 // primary field. Same lookup get-design uses.
 const CODE_FIELD_NAME = "Code";
+const SESSION_FIELD_NAME = "Session";
+const EMAIL_FIELD_NAME = "Email";
 const CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
 
 type Body = {
@@ -321,11 +323,29 @@ async function findByCode(code: string): Promise<{ id: string | null; snag: Snag
   return { id: found?.records?.[0]?.id ?? null, snag: null };
 }
 
-/**
- * Reads back what the mail needs: the code the customer quotes, and somewhere
- * to fetch the concept from. Only called when an email is going out.
- */
-async function readDesign(recordId: string): Promise<{ code: string | null; imageUrl: string | null }> {
+export type Filed = { id: string; code: string; imageUrl: string | null; session: string | null };
+
+const asFiled = (rec: any): Filed | null => {
+  const code = rec?.fields?.[FIELD.code];
+  if (!rec?.id || !code) return null;
+  const concept = rec.fields[FIELD.concept];
+  const file = Array.isArray(concept) ? concept[0] : null;
+  return {
+    id: rec.id,
+    code,
+    /* Airtable's own 768px thumbnail, not the original. A concept is two and a
+       half megabytes and a session is three of them; at full size one email
+       would be eight megabytes of attachments to show three pictures the width
+       of a phone. The large thumbnail is a tenth of that and larger than it
+       will ever be displayed. Both URLs expire, which is why the bytes are
+       fetched at send time rather than linked. */
+    imageUrl: file?.thumbnails?.large?.url ?? file?.url ?? null,
+    session: rec.fields[FIELD.session] ?? null,
+  };
+};
+
+/** One row, by id. */
+async function readDesign(recordId: string): Promise<Filed | null> {
   try {
     const query = new URLSearchParams({ returnFieldsByFieldId: "true" });
     const res = await fetch(`${table()}/${encodeURIComponent(recordId)}?${query}`, {
@@ -333,18 +353,109 @@ async function readDesign(recordId: string): Promise<{ code: string | null; imag
     });
     if (!res.ok) {
       report(await readSnag("airtable:read", res), 0, `record=${recordId}`);
-      return { code: null, imageUrl: null };
+      return null;
     }
-    const rec = await res.json();
-    const concept = rec?.fields?.[FIELD.concept];
-    return {
-      code: rec?.fields?.[FIELD.code] ?? null,
-      imageUrl: Array.isArray(concept) && concept[0]?.url ? concept[0].url : null,
-    };
+    return asFiled(await res.json());
   } catch (err) {
     report(snagFrom("airtable:read", err), 0, `record=${recordId}`);
-    return { code: null, imageUrl: null };
+    return null;
   }
+}
+
+/**
+ * Every design filed under one session, newest first.
+ *
+ * A customer generates three takes at a time and picks one to save, but all
+ * three are theirs and all three are on file. Sending back only the selected
+ * one throws the other two away at exactly the moment they asked not to lose
+ * anything.
+ */
+export async function readSession(session: string): Promise<Filed[]> {
+  try {
+    const query = new URLSearchParams({
+      // Session is a plain text field the page generates as a UUID, so there is
+      // nothing in it to quote-escape out of. Guarded anyway.
+      filterByFormula: `{${SESSION_FIELD_NAME}}="${session.replace(/["\\]/g, "")}"`,
+      returnFieldsByFieldId: "true",
+      maxRecords: "20",
+      "sort[0][field]": FIELD.created,
+      "sort[0][direction]": "desc",
+    });
+    const res = await fetch(`${table()}?${query}`, { headers: airtableHeaders() });
+    if (!res.ok) {
+      report(await readSnag("airtable:read", res), 0, `session=${session}`);
+      return [];
+    }
+    const found = await res.json();
+    return (found?.records ?? []).map(asFiled).filter(Boolean) as Filed[];
+  } catch (err) {
+    report(snagFrom("airtable:read", err), 0, `session=${session}`);
+    return [];
+  }
+}
+
+/**
+ * Every design filed under one address, newest first. Used by the lookup, which
+ * is the only thing that has ever read the Email column.
+ *
+ * Matched case-insensitively, because somebody who saved as Captain@… and comes
+ * back as captain@… is the same person and should not be told there is nothing
+ * on file.
+ */
+export async function findByEmail(email: string): Promise<Filed[]> {
+  try {
+    const query = new URLSearchParams({
+      // The caller has already refused quotes and backslashes in the address.
+      filterByFormula: `LOWER({${EMAIL_FIELD_NAME}})="${email.toLowerCase().replace(/["\\]/g, "")}"`,
+      returnFieldsByFieldId: "true",
+      maxRecords: "30",
+      "sort[0][field]": FIELD.created,
+      "sort[0][direction]": "desc",
+    });
+    const res = await fetch(`${table()}?${query}`, { headers: airtableHeaders() });
+    if (!res.ok) {
+      report(await readSnag("airtable:read", res), 0, "lookup by email");
+      return [];
+    }
+    const found = await res.json();
+    return (found?.records ?? []).map(asFiled).filter(Boolean) as Filed[];
+  } catch (err) {
+    report(snagFrom("airtable:read", err), 0, "lookup by email");
+    return [];
+  }
+}
+
+/**
+ * Writes the same fields onto several rows at once. Airtable takes ten per
+ * request, and a session is three, so this is one call in practice.
+ *
+ * The address goes on every design in the session, not just the one that was
+ * on screen when it was typed. Otherwise looking a customer up by their address
+ * later finds one of their three designs and silently loses the rest.
+ */
+async function patchMany(ids: string[], fields: Record<string, unknown>): Promise<number> {
+  let written = 0;
+  for (let i = 0; i < ids.length; i += 10) {
+    const batch = ids.slice(i, i + 10);
+    try {
+      const res = await fetch(table(), {
+        method: "PATCH",
+        headers: airtableHeaders(),
+        body: JSON.stringify({
+          records: batch.map((id) => ({ id, fields })),
+          typecast: true,
+        }),
+      });
+      if (!res.ok) {
+        report(await readSnag("airtable:patch", res), 0, `records=${batch.length}`);
+        continue;
+      }
+      written += batch.length;
+    } catch (err) {
+      report(snagFrom("airtable:patch", err), 0, `records=${batch.length}`);
+    }
+  }
+  return written;
 }
 
 /**
@@ -438,16 +549,25 @@ async function updateRecord(
        can say what actually happened rather than promising mail. */
     let emailed = false;
     if (mail) {
-      const design = await readDesign(recordId);
-      const code = design.code ?? who.code ?? null;
-      if (!code) {
-        console.error(`save-design: no code on ${recordId}, cannot send a copy`);
+      const saved = await readDesign(recordId);
+      /* Everything from the same visit, because all of it is theirs. The one
+         they had on screen is only the one they happened to be looking at. */
+      const session = saved?.session ?? null;
+      const designs = session ? await readSession(session) : saved ? [saved] : [];
+      const rest = designs.filter((d) => d.id !== recordId).map((d) => d.id);
+      if (rest.length) {
+        const also = await patchMany(rest, { [FIELD.email]: mail.email });
+        console.log(`save-design: address written to ${also + 1} designs in session ${session}`);
+      }
+
+      if (!designs.length) {
+        console.error(`save-design: nothing readable on ${recordId}, cannot send a copy`);
       } else {
         const sent = await sendDesign({
           to: mail.email,
-          code,
-          imageUrl: design.imageUrl,
+          designs: designs.map((d) => ({ code: d.code, imageUrl: d.imageUrl })),
           origin: mail.origin,
+          reason: "saved",
         });
         emailed = sent.ok;
       }

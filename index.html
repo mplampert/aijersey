@@ -322,6 +322,15 @@ textarea{resize:vertical;line-height:1.5}
 .code b{font-weight:700;font-size:18px;letter-spacing:.12em;color:var(--crease);font-variant-numeric:tabular-nums}
 /* One row per concept while a run is going, so three takes arriving over a
    minute look like progress rather than like nothing happening. */
+/* The way back in when the code is gone. Folded away, because it is for the
+   customer who comes back rather than the one who is here now. */
+.recover{margin-top:18px;border-top:1px solid var(--seam-lo);padding-top:14px}
+.recover .link{
+  background:none;border:0;padding:0;font:inherit;font-size:14px;
+  color:var(--ice-2);text-decoration:underline;cursor:pointer;
+}
+.recover .link:hover{color:var(--ink)}
+.recover #recover{margin-top:10px}
 .runs{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
 .runs li{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--dim)}
 .runs b{font-weight:500;color:var(--ink)}
@@ -602,8 +611,8 @@ footer{
 
         <div class="capture" id="capture" hidden>
           <label class="fld" for="saveEmail">Don&rsquo;t lose this design</label>
-          <p class="note">The link and the code are all there is &mdash; there&rsquo;s no account to log
-            back into. Leave your address and we can send the design back to you if you lose them.</p>
+          <p class="note">There&rsquo;s no account to log back into. Leave your address and we&rsquo;ll
+            email you every design from this session &mdash; codes, pictures and links.</p>
           <input type="email" id="saveEmail" placeholder="you@yourteam.com" autocomplete="email">
           <label class="fld" for="savePhone">Phone <span class="opt">Optional</span></label>
           <p class="note">So we can text you when your proof is ready.</p>
@@ -611,6 +620,19 @@ footer{
                  placeholder="(555) 234-5678" autocomplete="tel">
           <button class="ghost" id="saveBtn">Save this design for me</button>
           <p class="saved" id="saveMsg" hidden role="status"></p>
+
+          <div class="recover">
+            <button type="button" class="link" id="recoverBtn" aria-expanded="false">
+              Saved a design here before?
+            </button>
+            <div id="recover" hidden>
+              <p class="note">Enter the address you saved with and we&rsquo;ll email you every design
+                on file for it, codes and all.</p>
+              <input type="email" id="recoverEmail" placeholder="you@yourteam.com" autocomplete="email">
+              <button class="ghost" id="recoverGo">Email me my designs</button>
+              <p class="saved" id="recoverMsg" hidden role="status"></p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -847,7 +869,8 @@ const CFG = {
   waitCap: 90000,       // never sit on a retry-after longer than this
   endpoint: '/api/generate-concept',  // serverless function; returns { image } or { error }
   getEndpoint: '/api/get-design',     // serverless function; returns a shared design by code
-  saveEndpoint: '/api/save-design'    // serverless function; returns { ok } or { error }
+  saveEndpoint: '/api/save-design',   // serverless function; returns { ok } or { error }
+  recoverEndpoint: '/api/email-designs'  // emails every design saved under an address
 };
 
 const $ = s => document.querySelector(s);
@@ -1683,6 +1706,45 @@ $('#refineChips').querySelectorAll('button').forEach(b=>{
   };
 });
 
+/* ---------------- getting back in ---------------- */
+/* The code was the only route to a design, and a customer who lost it had lost
+   the design however carefully they saved it. This reads the address instead. */
+$('#recoverBtn').onclick=()=>{
+  const box=$('#recover'), open=box.hidden;
+  box.hidden=!open;
+  $('#recoverBtn').setAttribute('aria-expanded',open?'true':'false');
+  if(open) $('#recoverEmail').focus();
+};
+
+$('#recoverGo').onclick=async()=>{
+  const email=$('#recoverEmail').value.trim();
+  const msg=$('#recoverMsg'), btn=$('#recoverGo');
+  msg.hidden=true;
+  if(!email){$('#recoverEmail').focus();return;}
+  btn.disabled=true;btn.textContent='Looking…';
+  try{
+    const res=await fetch(CFG.recoverEndpoint,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email})
+    }).catch(()=>{
+      throw new Error('We couldn\'t reach the server — check your connection and try again.');
+    });
+    const d=await res.json().catch(()=>null);
+    if(!res.ok) throw new Error((d&&d.error)||'We couldn\'t look that up just now — try again in a moment.');
+    /* The same answer whether or not anything was found: the endpoint will not
+       say which addresses are on file, and the person who owns the address
+       finds out in their inbox either way. */
+    msg.className='saved ok';
+    msg.textContent=(d&&d.message)||'If we have designs saved under that address, they\'re on their way.';
+  }catch(err){
+    msg.className='saved bad';
+    msg.textContent=err.message;
+  }finally{
+    msg.hidden=false;
+    btn.disabled=false;btn.textContent='Email me my designs';
+  }
+};
+
 $('#saveBtn').onclick=async()=>{
   const email=$('#saveEmail').value.trim();
   const msg=$('#saveMsg'), btn=$('#saveBtn');
@@ -1739,8 +1801,10 @@ $('#saveBtn').onclick=async()=>{
        not coming is worse than not promising one. */
     const d=await res.json().catch(()=>null);
     msg.className='saved ok';
+    const n=S.versions.filter(x=>x.code).length;
     msg.textContent = d&&d.emailed
-      ? 'Sent to '+email+' — design code '+(v.code||'')+'. Check your spam folder if it isn\'t there in a minute.'
+      ? 'Sent to '+email+' — '+(n>1?'all '+n+' designs from this session, codes and all':'design code '+(v.code||''))
+        +'. Check your spam folder if it isn\'t there in a minute.'
       : 'Saved against design code '+(v.code||'')+'. Quote it any time — we\'ll be in touch at '+email+'.';
     if(d&&!d.emailed) console.warn('save address: saved, but no email went out — see the function log');
   }catch(err){
