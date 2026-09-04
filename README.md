@@ -27,6 +27,8 @@ vercel env add RESEND_API_KEY production        # the customer's copy of their d
 vercel env add SITE_URL production              # optional; where the reopen link points
 vercel env add GHL_API_TOKEN production         # optional; the CRM row for a saved design
 vercel env add GHL_LOCATION_ID production       # optional; the GHL sub-account
+vercel env add STRIPE_SECRET_KEY production     # the payment link, after proof approval
+vercel env add STRIPE_WEBHOOK_SECRET production # whsec_…; without it nothing is ever marked Paid
 vercel --prod
 ```
 
@@ -317,6 +319,104 @@ of them, and the thumbnail is 610KB and larger than it will ever be displayed.
 Sending is best-effort and never fails the save: the design and the address are
 on record before it runs, and the page says which happened rather than promising
 mail that did not go.
+
+## Money
+
+Nothing is charged at the concept stage, and nothing is charged when the order
+is placed. The flow is: concept → roster and details → factory redraws it →
+customer approves that proof → **pay in full** → production. Payment is the
+step after approval because that is the promise the page makes on every screen
+it has — nothing is built until you approve it, so nothing is billed until then
+either.
+
+### Prices
+
+`api/pricing.ts`, in cents, and it is the only thing that decides what anybody
+is charged.
+
+| | each |
+|---|---|
+| Jersey, name and number included | $49.99 |
+| Matching socks | $24.00 |
+| Skate soakers | $19.00 |
+| Player bags | $99.00 |
+
+One of each per player: a roster of 14 with socks buys 14 jerseys and 14 pairs.
+**Minimum order is 12 jerseys.**
+
+Cents, not dollars, all the way to Stripe — which wants cents anyway. $49.99 is
+not representable in binary floating point and twelve of them come to
+599.8799999999999, which is a rounding error somebody eventually gets billed
+for. `CFG.jerseyPrice` and `CFG.kit` in `index.html` carry the same numbers so
+the page can show a running total as the roster is typed; **that copy is display
+only and has to match `pricing.ts`.** Change both or neither — a page that
+quotes one figure while the server charges another is the worst version of this.
+
+### The minimum, in three places
+
+The button says how many more are needed rather than "fix the roster", `validate()`
+won't enable it, and `place-order` refuses the request. The third one is the one
+that counts: a page can be edited by anyone with a browser, and a three-jersey
+order reaching the factory is a phone call and an apology.
+
+### Placing the order
+
+`api/place-order.ts`. Writes the roster, kit, contact details and the priced
+total to the design, sets **Status** to `Ordered` and **Payment status** to
+`Unpaid`, and takes no money. It refuses to touch an order that is already
+paid — a paid order changing underneath the payment is how somebody ends up
+with 40 jerseys they were charged for 12 of.
+
+### Asking for the money
+
+`api/approve-proof.ts`, `POST { code }` or `{ recordId }`.
+
+**It does not approve anything.** Airtable is where a proof is approved — a
+person sets **Proof status** to `Approved` — and this refuses to run until that
+has happened. That is what makes it safe to leave open: it cannot conjure a
+payment demand out of nothing, only re-send one for an order a human already
+approved, to the address already on that order. Point an Airtable automation at
+it — when Proof status becomes Approved, POST the record id — and the flow runs
+itself.
+
+It prices the order from the record (never from the request), opens a Stripe
+Checkout Session for the full amount, writes **Stripe session id** and
+`Link sent`, and emails the customer the link.
+
+**A Checkout Session expires 24 hours after it is created.** That is Stripe's
+ceiling, not a choice. So the endpoint is re-runnable: it reads the session
+already on the record, reuses it while it is still open, and mints a fresh one
+when it isn't. Re-approving is how a customer gets another link, and the email
+says so. If that becomes a nuisance, the fix is a `/api/pay?…` redirect that
+mints a session on demand behind a token — an unexpiring link to a link.
+
+### Getting told it was paid
+
+`api/stripe-webhook.ts`. The customer pays on Stripe's page, so nothing comes
+back through the browser that can be trusted with marking an order paid.
+Register the endpoint for `checkout.session.completed` and
+`checkout.session.async_payment_succeeded` and set `STRIPE_WEBHOOK_SECRET`.
+**Without it every paid order sits at `Link sent` forever** — the money arrives,
+Airtable never hears about it.
+
+Signatures are checked against the raw body before anything is parsed, with a
+five-minute tolerance so a captured delivery can't be replayed. A delivery that
+fails that check gets a 400. Anything that passes it gets a 2xx even when the
+Airtable write fails, because Stripe retries a non-2xx for days and re-delivery
+will not fix a bad field id — that belongs in the log.
+
+The webhook also compares what Stripe charged against **Order total** and warns
+when they differ, which means the roster changed while a payment link was live.
+
+### On the record
+
+Three fields on **Designs**, created for this:
+
+| Field | |
+|---|---|
+| **Payment status** | `Unpaid` → `Link sent` → `Paid`, plus `Refunded` for the by-hand case |
+| **Stripe session id** | `cs_live_…`, overwritten whenever a fresh link is minted |
+| **Order total** | priced by the server; rewritten by the webhook to what was really charged |
 
 ## Reading a failed generation
 

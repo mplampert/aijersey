@@ -766,6 +766,8 @@ footer{
     </div>
 
     <button class="cta" id="checkout" disabled>Add a roster to continue</button>
+    <p class="note">Placing the order costs nothing. Your factory proof comes within 48 hours,
+      and a payment link follows once you approve it &mdash; in full, and not before.</p>
     <p class="msg" id="coMsg"></p>
   </section>
 
@@ -789,16 +791,21 @@ footer{
    CONFIG — every number and string you'd want to change is here.
    ============================================================ */
 const CFG = {
+  /* Display only. api/pricing.ts is what the customer is actually charged, and
+     these have to match it — the page shows a total while somebody types, the
+     server prices the order and the Stripe session from the roster on the
+     record, and a disagreement means the customer is quoted one number and
+     billed another. Change both, or neither. */
   moq: 12,
-  jerseyPrice: 49,
+  jerseyPrice: 49.99,
   // The rest of the kit. Each one is a plain yes/no answered in step 4 and
   // nowhere else, and none of them gets a preview — the matching designs are
   // confirmed on the factory proof, same as the jersey. `option` is the name
   // the Kit items select in Airtable offers, which is not always the label.
   kit: [
-    {id:'socks',   label:'Matching socks', option:'Socks',         price:19, note:'Same design, sublimated.'},
-    {id:'soakers', label:'Skate soakers',  option:'Skate soakers', price:24, note:'Team colors. One pair per player.'},
-    {id:'bag',     label:'Player bags',    option:'Player bags',   price:69, note:'Embroidered logo, senior size.'},
+    {id:'socks',   label:'Matching socks', option:'Socks',         price:24, note:'Same design, sublimated.'},
+    {id:'soakers', label:'Skate soakers',  option:'Skate soakers', price:19, note:'Team colors. One pair per player.'},
+    {id:'bag',     label:'Player bags',    option:'Player bags',   price:99, note:'Embroidered logo, senior size.'},
   ],
   sizes: ['YS','YM','YL','YXL','AS','AM','AL','AXL','A2XL'],
   // Socks are ordered by length in inches, so they get their own list — there
@@ -888,7 +895,13 @@ const CFG = {
 };
 
 const $ = s => document.querySelector(s);
-const money = n => '$' + n.toLocaleString('en-US');
+/* Prices are written in dollars above because that is how they are quoted, and
+   arithmetic on them happens in cents because 49.99 is not representable in
+   binary floating point — twelve of them add up to 599.8799999999999. cents()
+   is the only way a price becomes a number to add, and money() is the only way
+   it becomes text. Two decimals always: money with one is a typo. */
+const cents = d => Math.round(d*100);
+const money = c => (c/100).toLocaleString('en-US',{style:'currency',currency:'USD'});
 
 /* ---------------- state ---------------- */
 const S = { logo:null, colors:[], roster:[], kit:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id, vibe:null, crest:null,
@@ -909,7 +922,7 @@ $('#incl').innerHTML =
   [{label:'Jersey',note:'Sublimated in your colors, name and number on the back.',price:CFG.jerseyPrice}]
     .concat(CFG.kit.map(k=>({label:k.label,note:k.note,price:k.price})))
     .map(r=>`<li><div><b>${r.label}</b><small>${r.note}</small></div>`+
-            `<span class="price">${money(r.price)} each</span></li>`).join('');
+            `<span class="price">${money(cents(r.price))} each</span></li>`).join('');
 $('#inclMoq').textContent = CFG.moq;
 $('#faqMoq').textContent  = CFG.moq;
 
@@ -2100,7 +2113,7 @@ CFG.kit.forEach(k=>{
   S.kit[k.id]=false;
   const row=document.createElement('div');row.className='kit-item';
   const box=document.createElement('div');
-  box.innerHTML=`<b>${k.label} — ${money(k.price)} each</b><small>${k.note}</small>`;
+  box.innerHTML=`<b>${k.label} — ${money(cents(k.price))} each</b><small>${k.note}</small>`;
   const grp=document.createElement('div');
   grp.className='yesno';grp.setAttribute('role','group');
   grp.setAttribute('aria-label',k.label);
@@ -2163,11 +2176,11 @@ $('#team').oninput=pushOrder;
 
 function drawOrder(valid){
   const n=S.roster.length;
-  const rows=[['Jerseys · '+n+' × '+money(CFG.jerseyPrice), n*CFG.jerseyPrice]];
-  let total=n*CFG.jerseyPrice;
+  const rows=[['Jerseys · '+n+' × '+money(cents(CFG.jerseyPrice)), n*cents(CFG.jerseyPrice)]];
+  let total=n*cents(CFG.jerseyPrice);
   kitChosen().forEach(k=>{
-    rows.push([k.label+' · '+n+' × '+money(k.price), n*k.price]);
-    total+=n*k.price;
+    rows.push([k.label+' · '+n+' × '+money(cents(k.price)), n*cents(k.price)]);
+    total+=n*cents(k.price);
   });
   const box=$('#lines');box.innerHTML='';
   rows.forEach(([l,v])=>{
@@ -2179,32 +2192,91 @@ function drawOrder(valid){
 
   const btn=$('#checkout');
   btn.disabled=!valid;
-  btn.textContent = valid ? 'Pay '+money(total)+' and start the proof'
+  /* Says the minimum out loud rather than "fix the roster", because a customer
+     eleven jerseys in cannot tell those two apart and one of them is a rule
+     nobody told them about. */
+  const short = n && n<CFG.moq ? CFG.moq-n : 0;
+  btn.textContent = valid
+    ? 'Place this order — '+money(total)+', nothing charged yet'
+    : short ? 'Add '+short+' more to reach the '+CFG.moq+'-jersey minimum'
     : (n ? 'Fix the roster to continue' : 'Add a roster to continue');
 }
 
-$('#checkout').onclick=()=>{
-  const order={
-    design:{
-      prompt:buildBrief(),
-      style:S.style,
-      logo:S.logo?S.logo.name:null,
-      selected:S.vIndex<0?null:{
-        label:versionName(S.versions[S.vIndex],S.vIndex),
-        index:S.vIndex,
-        code:S.versions[S.vIndex].code,
-        image:S.concept
-      }
-    },
-    colors:S.colors,
-    roster:S.roster,
-    kit:kitChosen().map(k=>({id:k.id,label:k.label,price:k.price})),
-    account:{team:$('#team').value,contact:$('#contact').value,email:$('#email').value}
-  };
-  console.log('ORDER',order);
-  $('#coMsg').className='msg bad';
-  $('#coMsg').textContent='Checkout isn\'t wired yet — order payload is in the browser console. Point this at Stripe or Shopify.';
+/* Places the order. Takes no money, and says so — payment is a link that
+   arrives after the factory proof is approved, which is the whole shape of
+   this: nobody is charged for a garment they have not seen redrawn. */
+$('#checkout').onclick=async()=>{
+  const btn=$('#checkout'), msg=$('#coMsg');
+  const v=S.vIndex<0?null:S.versions[S.vIndex];
+  const email=$('#email').value.trim();
+  if(!email){
+    msg.className='msg bad';msg.textContent='We need an email address to send your proof to.';
+    $('#email').focus();return;
+  }
+  /* Checked here as well as on the button, because the button is the thing
+     that gets disabled and this is the thing that gets clicked. The server
+     checks it a third time — a page can be edited, a factory run cannot. */
+  if(S.roster.length<CFG.moq){
+    msg.className='msg bad';
+    msg.textContent='Minimum order is '+CFG.moq+' jerseys. There '+(S.roster.length===1?'is ':'are ')
+      +S.roster.length+' on this roster, so it needs '+(CFG.moq-S.roster.length)+' more.';
+    return;
+  }
+  const was=btn.textContent;
+  btn.disabled=true;btn.textContent='Placing your order…';
+  msg.className='msg';msg.textContent='';
+  try{
+    const payload={
+      email,
+      name:$('#contact').value.trim(),
+      team:$('#team').value.trim(),
+      phone:$('#phone').value.trim(),
+      roster:S.roster,
+      kit:kitChosen().map(k=>k.option)
+    };
+    if(v&&v.recordId) payload.recordId=v.recordId;
+    if(v&&v.code) payload.code=v.code;
+    if(!payload.recordId&&!payload.code)
+      throw new Error('This design was never filed, so there is nothing to order against. The console has the reason.');
+
+    const res=await fetch('/api/place-order',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    }).catch(()=>{throw new Error('We couldn\'t reach the server — check your connection and try again.');});
+    const d=await res.json().catch(()=>null);
+    if(!res.ok) throw new Error((d&&d.error)||'We couldn\'t place that order just now — try again in a moment.');
+
+    msg.className='msg ok';
+    msg.textContent='Order placed'+(v&&v.code?' against design '+v.code:'')+' — '+(d&&d.totalText||'')
+      +'. Nothing has been charged. Your factory proof comes within 48 hours, and the payment link'
+      +' follows once you approve it.';
+    btn.textContent='Order placed';
+  }catch(err){
+    msg.className='msg bad';msg.textContent=err.message;
+    btn.disabled=false;btn.textContent=was;
+  }
 };
+
+/* Stripe sends the customer back here when they are done with the payment
+   page, so this is the only place that can tell them it worked. The record is
+   marked paid by the webhook, not by this — a browser coming back from a
+   redirect proves nothing, and anybody can type the query string. */
+(function backFromStripe(){
+  const q=new URLSearchParams(location.search);
+  const paid=q.get('paid'), cancelled=q.get('payment')==='cancelled';
+  if(!paid&&!cancelled) return;
+  const msg=$('#coMsg');
+  if(paid){
+    msg.className='msg ok';
+    msg.textContent='Payment received for design '+paid+' — thank you. Production starts now,'
+      +' and your receipt is on its way from Stripe.';
+  }else{
+    msg.className='msg';
+    msg.textContent='No payment was taken. Your payment link still works — it is in the email'
+      +' we sent when your proof was approved.';
+  }
+  msg.scrollIntoView({behavior:'smooth',block:'center'});
+})();
 
 drawPicked();drawOrder(false);openShared();
 </script>

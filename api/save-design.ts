@@ -27,7 +27,7 @@ import { upsertContact } from "./ghl-contact.js";
 
 // Written by field id, not name, so renaming a column in Airtable can't break
 // the write. Do not add fields here without creating them in the base first.
-const FIELD = {
+export const FIELD = {
   code: "fldQErtLQMODLkERB",
   prompt: "fldmB5mAbH04AngkG",
   style: "fldeFewvBIGbQQxGu",
@@ -45,7 +45,24 @@ const FIELD = {
   rosterCount: "fldXNT5mBgEYudtYW",
   team: "fldaEQKn1znas35Rt",
   gallery: "fldoNMDzarxLKYkwB",
+  // The proof half of the base, which nothing wrote to until the order flow
+  // did. Proof status is the gate on payment: see approve-proof.
+  proofStatus: "fldm6oKZZ53gG6oyY",
+  // Payment. Nothing here is touched at the concept stage — an order is filed
+  // Unpaid and only becomes payable once the customer approves the proof.
+  payment: "fldiY2sQh2pdYItaP",
+  stripeSession: "fldlnkDSvtzx5rAQ8",
+  orderTotal: "fldVvSiVh1WvggEQ4",
 } as const;
+
+/* The single-select values this code writes, by name. Airtable matches them
+   with typecast, and typecast will happily invent an option for a typo, so
+   they are named once here rather than spelled out at each call site. */
+export const STATUS_ORDERED = "Ordered";
+export const PROOF_APPROVED = "Approved";
+export const PAY_UNPAID = "Unpaid";
+export const PAY_LINK_SENT = "Link sent";
+export const PAY_PAID = "Paid";
 
 // Style and Status are single selects. typecast lets Airtable match a plain
 // string to an option, but it will also invent a new option for anything else,
@@ -91,9 +108,9 @@ const CODE_FIELD_NAME = "Code";
 const SESSION_FIELD_NAME = "Session";
 const EMAIL_FIELD_NAME = "Email";
 const GALLERY_FIELD_NAME = "Gallery id";
-const CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
+export const CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
 
-type Body = {
+export type Body = {
   /* Either identifier reaches the same row. recordId is the one the page is
      handed when a design is filed; code is the one the customer can read off
      their own screen, which is the one that survives a reload, a shared link,
@@ -158,7 +175,7 @@ const colorText = (colors: Body["colors"]) =>
 // still lines up when someone reads the cell. A dash holds a column with no
 // answer — no sock size asked for, or not a goalie.
 const ROSTER_LIMIT = 100_000;   // Airtable's ceiling on a long text field
-const rosterText = (roster: Body["roster"]) =>
+export const rosterText = (roster: Body["roster"]) =>
   (roster ?? [])
     .map((p) =>
       [p.num, p.name, p.size, p.sock, p.goalie ? "G" : ""]
@@ -284,7 +301,7 @@ async function retryAttachments(
 }
 
 // Deliberately loose. The real check is whether the mail lands.
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
  * Loose on the way in, strict on the way out. Everything but the digits is
@@ -292,7 +309,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
  * dialable NANP number — area code and exchange can't start with 0 or 1 — or
  * it is refused. A number nobody can text is worse than an empty field.
  */
-function normalPhone(value: string): string | null {
+export function normalPhone(value: string): string | null {
   const digits = value.replace(/\D/g, "");
   const ten = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
   return /^[2-9]\d{2}[2-9]\d{6}$/.test(ten) ? `+1${ten}` : null;
@@ -311,10 +328,10 @@ function unconfigured(keys: string[]): Response | null {
   return Response.json({ error: "Design saving isn't configured", detail: snag }, { status: 503 });
 }
 
-const table = () =>
+export const table = () =>
   `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_ID}`;
 
-const airtableHeaders = () => ({
+export const airtableHeaders = () => ({
   Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
   "Content-Type": "application/json",
 });
@@ -324,7 +341,7 @@ const airtableHeaders = () => ({
  * such row, which is a real answer and not an error: a code the page is holding
  * from a design that was never filed has nothing to attach to.
  */
-async function findByCode(code: string): Promise<{ id: string | null; snag: Snag | null }> {
+export async function findByCode(code: string): Promise<{ id: string | null; snag: Snag | null }> {
   const began = Date.now();
   // The code is matched against CODE before it gets here, so only the 32 safe
   // glyphs ever reach the formula — there is nothing to quote-escape out of.
@@ -944,4 +961,63 @@ export async function POST(request: Request): Promise<Response> {
 
 export async function GET(): Promise<Response> {
   return Response.json({ error: "Use POST" }, { status: 405 });
+}
+
+/**
+ * The record a request means, by whichever identifier it sent.
+ *
+ * Shared with the order and payment endpoints, which face the same problem
+ * updateRecord does: the page holds a record id until it doesn't, and the code
+ * is the identifier that survives a reload, a shared link and a mail. Returns
+ * null when there is no such row, which is a real answer.
+ */
+export async function recordIdFor(who: { recordId?: string; code?: string }): Promise<string | null> {
+  if (who.recordId) return who.recordId;
+  const code = (who.code || "").trim().toUpperCase();
+  if (!CODE.test(code)) return null;
+  const { id } = await findByCode(code);
+  return id;
+}
+
+/** One row, every field, by field id. The order endpoints price from this. */
+export async function readFields(recordId: string): Promise<Record<string, any> | null> {
+  try {
+    const query = new URLSearchParams({ returnFieldsByFieldId: "true" });
+    const res = await fetch(`${table()}/${encodeURIComponent(recordId)}?${query}`, {
+      headers: airtableHeaders(),
+    });
+    if (!res.ok) {
+      report(await readSnag("airtable:read", res), 0, `record=${recordId}`);
+      return null;
+    }
+    return (await res.json())?.fields ?? null;
+  } catch (err) {
+    report(snagFrom("airtable:read", err), 0, `record=${recordId}`);
+    return null;
+  }
+}
+
+/** Writes fields onto one row. Returns the snag rather than a Response. */
+export async function patchFields(
+  recordId: string,
+  fields: Record<string, unknown>,
+): Promise<Snag | null> {
+  try {
+    const res = await fetch(`${table()}/${encodeURIComponent(recordId)}`, {
+      method: "PATCH",
+      headers: airtableHeaders(),
+      body: JSON.stringify({ fields, typecast: true }),
+    });
+    if (!res.ok) {
+      const snag = await readSnag("airtable:patch", res);
+      report(snag, 0, `record=${recordId} fields=${Object.keys(fields).join("|")}`);
+      return snag;
+    }
+    console.log(`save-design OK patch ${recordId} fields=${Object.keys(fields).join("|")}`);
+    return null;
+  } catch (err) {
+    const snag = snagFrom("airtable:patch", err);
+    report(snag, 0, `record=${recordId}`);
+    return snag;
+  }
 }

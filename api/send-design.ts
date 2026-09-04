@@ -236,3 +236,135 @@ export async function sendDesign(mail: DesignMail): Promise<Sent> {
     return { ok: false, status: null, message };
   }
 }
+
+/* ---------------- the payment link ---------------- */
+
+export type PaymentMail = {
+  to: string;
+  /** The Stripe Checkout URL. Good for 24 hours — see approve-proof. */
+  url: string;
+  code: string;
+  team: string | null;
+  /** Priced lines, in cents, exactly as Stripe will charge them. */
+  lines: { label: string; unit: number; qty: number; total: number }[];
+  total: number;
+};
+
+const usd = (cents: number) =>
+  (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+/** Exported so the mail can be read without sending one. */
+export function renderPaymentMail(mail: PaymentMail) {
+  const rows = mail.lines
+    .map((l) => `${l.label} · ${l.qty} × ${usd(l.unit)}   ${usd(l.total)}`)
+    .join("\n");
+
+  const text = [
+    `Your proof is approved — here's the payment link.`,
+    ``,
+    `Design ${mail.code}${mail.team ? ` · ${mail.team}` : ""}`,
+    ``,
+    rows,
+    `Total   ${usd(mail.total)}`,
+    ``,
+    `Pay in full: ${mail.url}`,
+    ``,
+    `This link is good for 24 hours. If it has expired by the time you get to`,
+    `it, reply to this email and we'll send a fresh one — nothing is lost.`,
+    ``,
+    `Production starts once payment lands.`,
+    ``,
+    `Marty's Jerseys`,
+  ].join("\n");
+
+  const lineHtml = mail.lines
+    .map(
+      (l) => `<tr>
+        <td style="padding:6px 0;font-size:14px;color:#5b6270">${escape(l.label)} · ${l.qty} × ${usd(l.unit)}</td>
+        <td style="padding:6px 0;font-size:14px;color:#14161a;text-align:right;font-variant-numeric:tabular-nums">${usd(l.total)}</td>
+      </tr>`,
+    )
+    .join("");
+
+  const html = `<div style="margin:0;padding:24px;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:12px;border:1px solid #e3e5e9">
+    <tr><td style="padding:28px 28px 0">
+      <h1 style="margin:0 0 6px;font-size:19px;line-height:1.3;color:#14161a">Your proof is approved.</h1>
+      <p style="margin:0;font-size:15px;line-height:1.5;color:#5b6270">Design ${escape(mail.code)}${mail.team ? ` · ${escape(mail.team)}` : ""} — production starts once payment lands.</p>
+    </td></tr>
+    <tr><td style="padding:18px 28px 0">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+        ${lineHtml}
+        <tr><td style="padding:12px 0 0;border-top:1px solid #e3e5e9;font-size:15px;font-weight:700;color:#14161a">Total</td>
+            <td style="padding:12px 0 0;border-top:1px solid #e3e5e9;font-size:15px;font-weight:700;color:#14161a;text-align:right;font-variant-numeric:tabular-nums">${usd(mail.total)}</td></tr>
+      </table>
+    </td></tr>
+    <tr><td style="padding:20px 28px 0">
+      <a href="${escape(mail.url)}" style="display:block;background:#e4652a;color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;text-align:center;padding:13px 20px;border-radius:9px">Pay ${usd(mail.total)}</a>
+    </td></tr>
+    <tr><td style="padding:14px 28px 26px">
+      <p style="margin:0;font-size:13px;line-height:1.5;color:#8b929e">
+        This link is good for 24 hours. If it has expired by the time you get to it, reply to this
+        email and we'll send a fresh one — nothing is lost.
+      </p>
+    </td></tr>
+  </table>
+</div>`;
+
+  return { text, html };
+}
+
+/**
+ * Sends the customer the link that takes their money.
+ *
+ * Sent once the proof is approved and never before — see approve-proof. Like
+ * every other send here it never throws: the session exists in Stripe and is
+ * written on the record before this runs, so a provider outage costs an email
+ * and the link can be re-sent by approving again.
+ */
+export async function sendPaymentLink(mail: PaymentMail): Promise<Sent> {
+  if (!process.env.RESEND_API_KEY) {
+    console.error("send-payment: RESEND_API_KEY is not set, no mail sent");
+    return { ok: false, status: null, message: "RESEND_API_KEY is not set" };
+  }
+  const began = Date.now();
+  const { text, html } = renderPaymentMail(mail);
+  try {
+    const res = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: FROM,
+        to: [mail.to],
+        ...(REPLY_TO ? { reply_to: REPLY_TO } : {}),
+        subject: `Your jerseys are approved — ${usd(mail.total)} to start production`,
+        text,
+        html,
+      }),
+    });
+    const took = ((Date.now() - began) / 1000).toFixed(1);
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      let message = detail.slice(0, 300);
+      try {
+        const parsed = JSON.parse(detail);
+        message = parsed?.message ?? parsed?.error?.message ?? message;
+      } catch {
+        // Not JSON.
+      }
+      message = message.replace(/\s+/g, " ").trim();
+      console.error(`send-payment FAIL status=${res.status} ${took}s to=${mail.to} code=${mail.code} :: ${message}`);
+      return { ok: false, status: res.status, message };
+    }
+    const sent = await res.json().catch(() => null);
+    console.log(`send-payment OK ${took}s to=${mail.to} code=${mail.code} total=${usd(mail.total)} id=${sent?.id ?? "-"}`);
+    return { ok: true };
+  } catch (err) {
+    const message = String((err as Error)?.message ?? err).replace(/\s+/g, " ").trim();
+    console.error(`send-payment FAIL status=- to=${mail.to} code=${mail.code} :: ${message}`);
+    return { ok: false, status: null, message };
+  }
+}
