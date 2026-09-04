@@ -20,6 +20,8 @@ netlify env:set AIRTABLE_BASE_ID <id>
 netlify env:set AIRTABLE_TABLE_ID <id>
 netlify env:set RESEND_API_KEY <key>        # the customer's copy of their design
 netlify env:set SITE_URL https://…          # optional; where the reopen link points
+netlify env:set GHL_API_TOKEN <key>         # optional; the CRM row for a saved design
+netlify env:set GHL_LOCATION_ID <id>        # optional; the GHL sub-account
 netlify deploy --prod
 ```
 
@@ -161,6 +163,88 @@ Sending is best-effort and never fails the save: the design, the address and the
 token are on record before it runs, and the page says which happened rather than
 promising mail that did not go. It also offers the gallery link inline, since
 somebody who just typed their address is right there.
+
+## The CRM row
+
+`api/ghl-contact.ts`. The same save that sends the email also files the customer
+in GoHighLevel, so a lead is in the CRM without anybody copying it across. It
+runs after the mail, because it is the least time-critical thing a save does and
+the customer is waiting on the response.
+
+**Upsert, by email.** `POST /contacts/upsert` on the v2 API, which matches on the
+address within the location. A customer who saves a second design a week later
+updates the contact they already have; a create would split one person's history
+across two rows. The address is always sent, and the phone number never stands in
+for it.
+
+The team name goes in as both the contact name and the company — the team is who
+this business is selling to, and GHL lists by one and filters by the other. The
+phone number goes in E.164, as the save already normalised it. Both are sent only
+when that save carried them; a save that changed nothing but the address leaves
+what is already on the contact alone.
+
+**Three custom fields have to exist on the contact:** `design_code`,
+`design_gallery` and `design_image` — the four-character code, the gallery link,
+and the concept picture, so a GHL email can show the customer their own jersey
+inline. They are looked up once per warm function and written by id rather than
+by key, because a key GHL doesn't recognise is dropped silently — the contact
+saves and the code simply isn't on it. If the lookup is refused (a token without
+`locations/customFields.readonly`) it falls back to writing by key; if a field
+doesn't exist at all, the log says which one to create.
+
+`design_image` is the **blob** URL, not the Airtable attachment URL sitting next
+to it. Airtable expires attachment URLs within hours, which is fine for the
+email — that fetches the bytes and attaches them at send time — and wrong for
+anything that stores a link and renders it later: a GHL mail would show the
+jersey this afternoon and a broken image every day after. The blob is the
+original upload, is public, and stays where the save put it. It is found by
+listing `designs/<session>/<code>-concept`, so nothing had to be stored to make
+this work and designs filed before any of it existed resolve too. That listing
+needs `BLOB_READ_WRITE_TOKEN`, which saving already requires. A picture that
+can't be found leaves the field empty and is logged; it never fails a save.
+
+**The tag is `ai-jersey-lead`, added on its own call** rather than in the upsert
+body. Tags sent with an upsert replace what the contact has, and a returning
+customer's contact may carry tags a person put there by hand — nothing this page
+does should quietly clear someone's CRM.
+
+### Reading a GHL write
+
+Every request and every response is logged, on success as much as on failure —
+a 200 that quietly did nothing looks exactly like a 200 that created the contact
+unless you can see the body. `ghl →` is what was sent, `ghl ←` is the status and
+raw body that came back. The `Authorization` header is the only thing held back;
+`token=private-integration/…ch` says what kind of token is configured and how
+long it is, never any of it.
+
+So, for a save where no contact appeared, in the function log:
+
+- **`ghl: NO CONTACT WRITTEN — not configured`** — the env vars aren't reaching
+  the function. Netlify env changes don't apply until a new deploy, so this is
+  also what a variable that was set but not redeployed behind looks like.
+- **Nothing at all** — the save never got as far as the CRM. Look further up for
+  the Airtable patch failing, or for the address not being in the payload.
+- **`ghl ← upsert 401`** — the token. `Invalid JWT` is a bad or expired one;
+  `this authClass does not have access to this scope` is a real token missing
+  `contacts.write`.
+- **`ghl ← upsert 403`** — the token is fine but has no rights over that
+  `GHL_LOCATION_ID`, which is what an agency-level token does here.
+- **`ghl ← upsert 422`** with a list of messages — the payload; the `ghl →` line
+  above it is exactly what was sent.
+- **`ghl: contact … landed in location …`** — it worked, into a different
+  sub-account. The contact exists; nobody is looking where it is.
+- **`ghl OK upsert`** with a real id and no warning — GHL took it, and the
+  contact is in that location under the address on the `ghl →` line.
+
+`ghl: contact custom fields on <location>: …` lists what the location actually
+has, next to a line per field this wanted and didn't find. That mapping is
+cached for the life of a warm function, so fields created in GHL after the fact
+are picked up on the next deploy or cold start, not immediately.
+
+Best-effort, like the email beside it: the design, the address and the gallery
+token are all on record before this runs, and nothing here can fail a save or
+lose a customer their email. Leave `GHL_API_TOKEN` and `GHL_LOCATION_ID` unset and the page runs
+exactly as it did, minus the contact.
 
 ## Pacing
 

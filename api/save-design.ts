@@ -1,6 +1,7 @@
-import { put } from "@vercel/blob";
+import { list, put } from "@vercel/blob";
 // Compiled output is .js, and the runtime resolves this specifier verbatim.
 import { sendDesign } from "./send-design.js";
+import { upsertContact } from "./ghl-contact.js";
 
 /**
  * POST /api/save-design
@@ -20,6 +21,8 @@ import { sendDesign } from "./send-design.js";
  *   AIRTABLE_TOKEN         — personal access token, data.records:write on the base
  *   AIRTABLE_BASE_ID       — base "AI Jersey Designs"
  *   AIRTABLE_TABLE_ID      — table "Designs"
+ *   GHL_API_TOKEN          — optional; the CRM row. See ghl-contact.
+ *   GHL_LOCATION_ID        — optional; the sub-account the contact belongs to
  */
 
 // Written by field id, not name, so renaming a column in Airtable can't break
@@ -387,6 +390,46 @@ async function readDesign(recordId: string): Promise<Filed | null> {
 }
 
 /**
+ * The concept's own blob URL — the one URL for that picture that doesn't rot.
+ *
+ * The obvious candidate is Filed.imageUrl, and it is the wrong one: that is
+ * Airtable's attachment URL, handed out live because Airtable expires it within
+ * hours. It is right for an email that fetches the bytes and attaches them at
+ * send time, which is what send-design does, and wrong for anything that stores
+ * a link and renders it later. Written into a CRM it would show the customer
+ * their jersey this afternoon and a broken image every day after.
+ *
+ * The blob is the original upload, is public, and stays where save put it. Its
+ * pathname is `designs/<session>/<code>-concept-<suffix>`, so the record's own
+ * session and code find it — nothing had to be stored to make this work, which
+ * is why designs filed before any of this existed resolve too.
+ *
+ * Best-effort, like everything else this feeds: a picture that can't be found
+ * is one field left empty on a contact, and is never worth failing a save over.
+ */
+async function conceptBlobUrl(design: Filed | null): Promise<string | null> {
+  if (!design?.session || !design.code) return null;
+  const prefix = `designs/${design.session}/${design.code}-concept`;
+  try {
+    /* One code is minted per row, so in practice this is one blob. Asking for a
+       few and taking the newest costs nothing and settles the tie the same way
+       every time, rather than however the store happens to order them. */
+    const { blobs } = await list({ prefix, limit: 10 });
+    const newest = blobs
+      .slice()
+      .sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime())[0];
+    if (!newest) {
+      console.warn(`save-design: no concept blob under ${prefix}`);
+      return null;
+    }
+    return newest.url;
+  } catch (err) {
+    report(snagFrom("blob:concept", err), 0, `prefix=${prefix}`);
+    return null;
+  }
+}
+
+/**
  * Every design filed under one session, newest first.
  *
  * A customer generates three takes at a time and picks one to save, but all
@@ -655,6 +698,23 @@ async function updateRecord(
         });
         emailed = sent.ok;
       }
+
+      /* The CRM row for this lead, after the mail rather than before it. It is
+         the least time-critical thing a save does and the customer is waiting
+         on the response, so it goes last; it reports its own failures and
+         returns rather than throwing, because a save must not fail — and a
+         customer must not lose their email — over a CRM that is down. */
+      await upsertContact({
+        email: mail.email,
+        // Whatever this save carried. A save that only changed the address
+        // sends neither, and the contact keeps the ones already on it.
+        phone: (fields[FIELD.phone] as string | undefined) ?? null,
+        team: (fields[FIELD.team] as string | undefined) ?? null,
+        code: shown?.code ?? null,
+        gallery,
+        // The blob, not the attachment URL beside it in `shown`. See above.
+        image: await conceptBlobUrl(shown),
+      });
     }
     return Response.json({ ok: true, emailed, gallery });
 
