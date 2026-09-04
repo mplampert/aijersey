@@ -3,9 +3,16 @@ import { generateObject, jsonSchema } from "ai";
 /**
  * POST /api/check-image
  *
- * Looks at a generated artwork panel and answers two questions about it: does
- * it carry a real-world mark — a league shield, a professional team crest, a
- * brand logo — and does it carry any lettering at all.
+ * Looks at a generated concept and answers two questions about it: does it carry
+ * a real-world mark — a league shield, a professional team crest, a brand logo —
+ * and does it carry any lettering it should not.
+ *
+ * "Should not" rather than "any", because the back of the jersey is supposed to
+ * show a nameplate and a number. Those are asked for as the exact placeholders
+ * NAME and 00, which gives this one string to allow and lets it reject
+ * everything else — a real name, a wrong number, type on the front or the
+ * socks, and a garbled spelling of NAME, which is the failure that actually
+ * happens.
  *
  * Both are things image models do however firmly the prompt forbids them. They
  * are trained on real hockey imagery, which is covered in league marks and in
@@ -32,10 +39,13 @@ import { generateObject, jsonSchema } from "ai";
 export const CHECK_MODEL = "google/gemini-2.5-flash-lite";
 
 const QUESTION = [
-  "This is a flat artwork panel drawn to be printed onto an ice hockey jersey for a small club. It is artwork only — there is no garment in it.",
+  "This is a product photograph of a custom ice hockey kit made for a small club: the jersey shown front and back on hangers, with a pair of leg socks alongside.",
   "Answer two questions about it.",
-  "First: does it show any real-world mark? That means a sports league logo or shield of any kind (the NHL shield especially), a professional, college or national team crest, or a brand or manufacturer logo such as Bauer, CCM, Nike, Adidas, Reebok or Warrior. An original design invented for this club is fine and is not a real-world mark. Answer found: true only if you can actually see such a mark, and name each one you see in marks.",
-  "Second: does it show any lettering at all? That means letters, words, numbers, initials, a monogram, a wordmark, a signature or a date — in any language, any script, at any size, however stylised, decorative or garbled, and including lettering that is only part of the illustration or too distorted to read.",
+  "First: does it show any real-world mark? That means a sports league logo or shield of any kind (the NHL shield especially), a professional, college or national team crest, or a brand or manufacturer logo such as Bauer, CCM, Nike, Adidas, Reebok or Warrior. Look at the whole kit, including the collar, the back neck, the sleeves, the shoulders, the hem and the socks. An original design invented for this club is fine and is not a real-world mark. Answer found: true only if you can actually see such a mark, and name each one you see in marks.",
+  "Second: does it show any lettering it should not?",
+  "Exactly one piece of lettering belongs here: on the BACK view of the jersey, a nameplate reading exactly NAME with a large number reading exactly 00 below it. Those two are correct and expected — do not report them.",
+  "Everything else is wrong. Report it if you see: any lettering on the front of the jersey, on the sleeves, on the shoulders, on the collar or on the socks; a real or invented player name or team name anywhere; any number other than 00; a nameplate that reads anything other than NAME, including a misspelling of it such as NAMF or NMAE; and any garbled, distorted or unreadable characters anywhere, including on the back.",
+  "Judge the back nameplate and number strictly: if the letters do not spell NAME exactly, or the number is not exactly 00, that is wrong lettering and must be reported.",
   "Shapes that merely resemble letters — a row of trees, a skyline, a repeated motif — are not lettering. Answer lettering: true only if these are actually characters, and quote or describe what you see in letters.",
 ].join(" ");
 
@@ -64,12 +74,12 @@ const VERDICT = jsonSchema<Answer>({
     },
     lettering: {
       type: "boolean",
-      description: "True if any letters, words, numbers or characters are visible anywhere in the artwork, however stylised or garbled.",
+      description: "True if any lettering is visible that is not the back nameplate reading exactly NAME with the number exactly 00. A misspelt nameplate, a wrong number, or any characters on the front, sleeves, collar or socks all count as true.",
     },
     letters: {
       type: "array",
       items: { type: "string" },
-      description: "What the lettering says or looks like, e.g. \"HARBUOR across the middle\". Empty when lettering is false.",
+      description: "What the wrong lettering says or looks like and where, e.g. \"HARBUOR across the chest\" or \"nameplate reads NAMF\". Empty when lettering is false.",
     },
   },
   required: ["found", "marks", "lettering", "letters"],

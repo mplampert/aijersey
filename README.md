@@ -40,24 +40,34 @@ compositor stays in the repo for when a second look is wanted.
 
 `/api/generate-concept` now returns the finished sales image: the jersey front
 and back on wooden hangers with a matching pair of leg socks laid alongside,
-real fabric drape, soft studio light, neutral background.
+real fabric drape, soft studio light, neutral background. The design is asked
+for as an illustrated scene built from the theme rather than a stripe set —
+left to itself a model gives back two bands on a solid body — with a mascot or
+icon at the chest, and the vibe the customer picks says how it is drawn rather
+than what it is of.
 
 ## What's wired
 
 - **Design** — prompt + idea chips + logo upload. Posts to `/api/generate-concept`
   and shows what comes back.
-- **Crest** — its own layer, composited onto the returned photograph: the
-  uploaded logo untouched, or the team name set as a wordmark, outlined against
-  whatever it lands on. Never drawn by the model. Where it goes is found in the
-  pixels, since the model reframes on every generation.
+- **Crest** — an uploaded logo is composited onto the returned photograph
+  untouched, and the chest is asked to be left clear for it. Where it goes is
+  found in the pixels, since the model reframes on every generation. A customer
+  who has no logo answered "design one for us", and what designs it is the model:
+  the mascot or icon at the chest is part of the artwork, so nothing is
+  composited over it.
 - **Colours** — factory colour card, multi-select. Passed into the prompt as the
   panel's palette, capped at five: past that a model treats the list as a
   suggestion.
 - **Image checks** — every concept is read before anyone sees it. A real-world
-  mark or any lettering is a hard reject: one redraw, and if it comes back
-  carrying either, the take is dropped rather than shown. `api/check-panel.ts`
-  does the pixel side with no dependencies; the lettering verdict comes from the
-  vision call `api/check-image.ts` was already making.
+  mark, or any lettering beyond the back nameplate, is a hard reject: one redraw,
+  and if it comes back carrying either, the take is dropped rather than shown.
+  The verdict comes from the vision call `api/check-image.ts` was already making,
+  which knows the back is supposed to read exactly NAME and 00 and rejects
+  anything else — a real name, a wrong number, a misspelling, type on the front
+  or the socks. `api/check-panel.ts` still reads the pixels for type with no
+  dependencies, but only as a log line: it sees shapes, not characters, so it
+  cannot tell NAME from NAMF.
 - **Names never reach the model.** The team name travels in its own field, is
   never interpolated into a prompt, and is scrubbed back out of the brief if a
   customer typed it there. The roster is not sent at all. No image model sets
@@ -68,10 +78,11 @@ real fabric drape, soft studio light, neutral background.
 
 ## What isn't
 
-- **The wordmark is a placeholder.** A customer without a logo gets their team
-  name set in bold italic, fitted to the chest and outlined for contrast. It is
-  legible on any artwork and it is not a crest. Real ones are drawn, arced,
-  layered — this is one line of canvas text standing in for that.
+- **The team name is nowhere on the concept.** The back reads NAME and 00
+  because those are placeholders the factory proof carries, and the front carries
+  a mascot rather than a wordmark. No image model sets type legibly, so a real
+  name would have to be composited — and on the chest it would land on top of the
+  mascot. Somewhere below it, or on the back nameplate, is the next question.
 - **The crest constants want re-measuring.** `CREST` in `index.html` was
   measured on concepts that had no hangers and no socks in the frame. The search
   handles both — it steps over a hanger hook and a sock is too narrow to mistake

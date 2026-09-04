@@ -67,25 +67,31 @@ const STYLE_DEFAULT =
 
 /* Everything the image must not contain.
  *
- * The garment terms are gone from here — the model is drawing the garment now,
- * and forbidding fabric, folds and lighting is what a flat panel needed.
+ * The type terms are scoped now rather than absolute. They used to ban lettering
+ * outright, which was right while the back was not being asked for — but the
+ * back carries a nameplate and a number, so a blanket "no text" takes those with
+ * it. What has not changed is why the terms are here at all: no image model sets
+ * type legibly, and eleven generations in a row came back with a garbled team
+ * name across the chest. So every place type is not wanted is named, and the one
+ * place it is wanted is spelled out in NAMEPLATE, twice.
  *
- * The type terms stay, all of them, and they are the reason this list still
- * exists. Type is a problem regardless of render style: no image model sets it
- * legibly, and eleven generations in a row came back with a garbled team name
- * printed across the chest. The name goes on afterwards as real type.
- *
- * The emblem terms stay too, for the same reason one layer up. The customer's
- * crest is composited onto the finished photograph in the browser, so a crest
- * the model invents is a second one sitting under ours. */
+ * The emblem terms stay absolute. The customer's crest is composited onto the
+ * finished photograph in the browser, so a crest the model invents is a second
+ * one sitting under ours. */
 const NEGATIVE = [
-  "no text", "no letters", "no words", "no lettering", "no typography",
-  "no script", "no numbers", "no digits", "no captions", "no signage",
-  "no logo", "no emblem", "no badge", "no medallion", "no shield",
-  "no roundel", "no crest", "no monogram", "no wordmark", "no coat of arms",
-  "no watermark", "no brand marks", "no manufacturer logos", "no neck tags",
-  "no hem tags", "no league marks",
+  "no lettering on the front of the jersey", "no text on the chest",
+  "no team name", "no club name", "no city name", "no real player name",
+  "no lettering on the sleeves", "no lettering on the shoulders",
+  "no lettering on the collar", "no lettering on the socks",
+  "no numbers on the front", "no numbers on the socks", "no sleeve numbers",
+  "no captions", "no signage", "no signature", "no date", "no watermark",
+  "no badge", "no medallion", "no shield", "no roundel", "no monogram",
+  "no wordmark", "no coat of arms", "no enclosing border around the chest motif",
+  "no brand marks", "no manufacturer logos", "no neck tags", "no hem tags",
+  "no league marks", "no real-world team logos",
   "no ankle socks", "no crew socks", "no footwear", "no shoes", "no feet",
+  "no waistband", "no elastic", "no cuff", "no ribbing", "no pants",
+  "no leggings", "no shorts",
 ].join(", ");
 
 /* The shot. Said before the palette, because the negative list at the end is
@@ -99,29 +105,76 @@ const SHOT = [
   "The jersey is shown twice: the front view and the back view side by side, each",
   "on its own wooden hanger, hanging naturally with real fabric drape, soft folds",
   "and creases in the cloth.",
-  "Alongside them, laid flat, is a matching pair of ice hockey leg socks: long",
-  "tapered knitted tubes with an open end and no foot, the kind pulled on over",
-  "shin guards, roughly knee to thigh length. They carry the same stripe pattern,",
-  "the same design and the same palette as the jersey.",
+  "Alongside them, laid flat, is a matching pair of ice hockey leg socks — the",
+  "kind pulled on over shin guards. Each is a tall open knitted tube, open at",
+  "both ends, with no foot and no waistband: widest at the top and tapering",
+  "steadily toward the bottom, roughly knee to thigh length, with visible panel",
+  "seams running down its length and a set of horizontal stripes across its lower",
+  "third. One sock shows its front, the other its back.",
   "Soft, even studio lighting with gentle shadows. Plain neutral light grey",
   "background, no props, no model, no mannequin.",
-  "Every piece is the same kit: striping, yoke shape, sleeve design and color",
-  "blocking must match exactly between the front, the back and the socks.",
-  "The kit fills the frame. No border, no frame, no vignette.",
+  "The front and the back are the same garment and the same design: the same yoke,",
+  "the same stripes at the same height and the same placement, the same collar,",
+  "the same sleeve design and the same color blocking. Anything that appears on",
+  "one appears on the other in the same place. The socks carry that same stripe",
+  "pattern, at the same proportions, in the same palette.",
+  "Every piece is shown complete and in full: both jerseys entire from collar to",
+  "hem, and both socks entire and full length, from the open top to the open",
+  "tapered bottom. Nothing is",
+  "cropped by the edge of the frame or runs off it, and nothing overlaps anything",
+  "else. Leave a clear margin of background around the whole kit.",
+  "No border, no frame, no vignette.",
 ].join(" ");
+
+/* The single exception to the type ban, and it has to be stated twice: once as
+ * what the back carries, and once after the negative list, because a list that
+ * says "no lettering" eight ways will otherwise take the nameplate with it.
+ *
+ * Placeholders, not a real name or number. The concept sells the design, and
+ * every jersey on the roster gets a different pair — so NAME and 00 is what the
+ * factory proof carries and what this should show. It also means the checker has
+ * one exact string to allow and can reject everything else, garbled spellings of
+ * NAME included. */
+const NAMEPLATE =
+  "The back view carries a large two-digit player number low on the back, with a " +
+  "nameplate above it across the shoulders. The nameplate reads exactly NAME and " +
+  "the number is exactly 00 — these are placeholders, never an invented player " +
+  "name or number. Both must stay clearly legible against whatever artwork sits " +
+  "behind them. The front carries no lettering at all.";
+
+/* The design has a subject. Left to itself a model gives back a stripe set on a
+   solid body — the safe, sewn-twill answer it has seen most — and a customer who
+   asked for a tropical beach gets a teal jersey with two orange bands on it. So
+   the theme is asked for as an environment that runs across the garment, with
+   something at the chest to look at. */
+const SCENE = [
+  "Build the design around the theme as an illustrated scene, not as a stripe",
+  "pattern. There is an environment: a place, with a foreground, a background and",
+  "depth, running across the body, over the shoulders and down the sleeves as one",
+  "continuous picture.",
+  "Avoid a plain stripe-on-solid layout unless the theme specifically calls for",
+  "one.",
+].join(" ");
+
+/* Where the eye lands. Only when the customer has no crest of their own — when
+   they do, that file is composited onto this chest afterwards and anything the
+   model puts there ends up underneath it. */
+const MASCOT =
+  "At the centre chest of the front view, as the focal point of the design, place " +
+  "a single mascot or icon drawn from the theme: one clear subject, large enough " +
+  "to read from across the rink, sitting within the scene rather than pasted on " +
+  "top of it. It is illustration, not a badge — no enclosing circle, shield or " +
+  "roundel around it, and no lettering in or near it.";
 
 /* This is a sublimated garment, and left alone a model reproduces what it has
    seen most of: sewn twill, a solid body with a stitched stripe set. Full-body
    artwork is the reason a customer picks this process, so the brief says so. */
 const SUBLIMATION = [
-  "The artwork is printed into the fabric across the entire garment. There are no",
-  "sewn panels, no appliqué and no stitched stripes to design around, and no part",
-  "of the jersey is off limits to the print.",
-  "Treat the whole garment as one continuous canvas: the design runs edge to edge",
-  "across the chest and the back, over both sleeves, across the shoulders and the",
-  "yoke, and through the hem.",
-  "Gradients, fades, textures, illustrated scenes and large graphic elements that",
-  "wrap around the garment are all available and cost nothing in this process.",
+  "The artwork is printed into the fabric across the entire garment: no sewn",
+  "panels, no appliqué, no stitched stripes to design around, and no part of the",
+  "jersey off limits to the print — not the shoulders, not the sleeves, not the",
+  "hem. Gradients, fades, textures and large graphic elements cost nothing here,",
+  "so use them rather than flattening the design into blocks of solid color.",
 ].join(" ");
 
 /* Three takes on the same brief, so the options the customer picks between
@@ -129,11 +182,11 @@ const SUBLIMATION = [
    on the print. Keys match CFG.variants in index.html. */
 const VARIANTS: Record<string, string> = {
   safe:
-    "Play this one restrained. The print still covers the whole garment, but keep it quiet: a subtle allover texture, a soft gradient through the body, or a single motif carried over the shoulders and down the sleeves. Understated is the brief here — plain is not.",
+    "Play this one restrained: the scene quieter and simpler, softer contrast, fewer elements, the chest motif smaller. Understated is the brief here — plain is not, and the scene still carries the whole garment.",
   scene:
-    "Push this one as far as the process goes: a fully illustrated garment. Build a scene that wraps the front, the back, both sleeves and the shoulders as one continuous picture, with a background, a foreground and painted depth. This take should be obviously printed and impossible to sew.",
+    "Push this one as far as the process goes: the fullest version of the scene, painted depth, foreground and background, obviously printed and impossible to sew.",
   bold:
-    "Make this one graphic. Large-scale shapes, hard-edged color blocking, oversized motifs running off the edges of the garment at full bleed, printed through the sleeves and hem. High contrast and poster-like.",
+    "Make this one graphic: large-scale shapes, hard edges, oversized motifs running off the edges of the garment at full bleed. High contrast and poster-like.",
 };
 
 /* The team name, the player names and the numbers never reach the image prompt.
@@ -183,7 +236,13 @@ export type ConceptInput = {
 };
 
 /**
- * The prompt, clause by clause. Each one is load-bearing:
+ * The prompt, clause by clause. Each one is load-bearing.
+ *
+ * It runs about 4,500 characters. gpt-image-1 takes 32,000 and this is nowhere
+ * near it, but a model with a 4,000 limit would truncate — and it truncates from
+ * the end, which is where the negative list and its one exception live. Check
+ * the limit before changing MODEL.
+ *
  *
  * The shot first, because "product photograph ... on wooden hangers" is what
  * decides whether this reads as something you can buy or as a drawing of a
@@ -200,15 +259,20 @@ export function buildPrompt(i: ConceptInput): string {
   return [
     SHOT,
     STYLES[i.collar ?? ""] ?? STYLES[DEFAULT_STYLE],
+    NAMEPLATE,
     SUBLIMATION,
+    SCENE,
     `The design: ${i.theme}.`,
     `Color palette limited strictly to: ${i.palette.join(", ")}. Tints, shades, blends and gradients between them are encouraged; do not introduce a hue that is not on this list.`,
     i.look ?? STYLE_DEFAULT,
+    /* The chest belongs to one of them, never both. */
     i.ownCrest
-      ? "Leave the centre chest of the front view clear for the team's own crest, which is added afterwards: no crest, no logo, no monogram, no graphic element and no lettering of any kind there. The print still covers the rest of the garment, but it must settle into a calm, uncluttered area at the centre chest so a crest can sit on top of it and still read."
-      : "Leave the centre chest of the front view calm and uncluttered — a crest is added there afterwards.",
+      ? "Leave the centre chest of the front view clear for the team's own crest, which is composited on afterwards: no mascot, no icon, no crest, no logo, no monogram, no graphic element and no lettering of any kind there. The scene still runs across the rest of the garment, but it must settle into a calm, uncluttered area at the centre chest so a crest can sit on top of it and still read."
+      : MASCOT,
     VARIANTS[i.variant ?? ""] ?? "",
     NEGATIVE,
+    // Last, because the list above is emphatic and this is its one exception.
+    "The only lettering anywhere in the image is the nameplate reading NAME and the number 00 on the back view. Nothing else in the image carries any letters, words or numbers.",
   ]
     .filter(Boolean)
     .join(" ");
@@ -277,10 +341,16 @@ async function produce(
       Promise.resolve(checkPanel(seenBy)),
     ]);
 
-    /* The model read it, so its answer on lettering stands. Only when the call
-       failed does the shape detector decide alone. */
-    const lettering = verdict.ok ? verdict.lettering : panel.issues.includes("text");
-    const said = verdict.letters.join("; ") || panel.notes.find(Boolean) || "garbled type";
+    /* Only the model gets a vote on lettering now. The back is supposed to carry
+       a nameplate and a number, and the pixel detector sees shapes rather than
+       characters — it cannot tell NAME from NAMF, so it fires on every correct
+       image. It stays as a log line: if it says there is type and the model says
+       there is none, one of them is wrong and that is worth being able to see. */
+    const lettering = verdict.lettering;
+    const said = verdict.letters.join("; ") || "garbled type";
+    if (!verdict.ok && panel.issues.includes("text")) {
+      console.warn("check: no model verdict and the pixels look like type", { what, note: panel.notes[0] });
+    }
 
     const fixes: string[] = [];
     if (verdict.found) fixes.push(FIX_MARKS.replaceAll("%s", verdict.marks.join(", ") || "a real-world mark"));
@@ -441,7 +511,8 @@ export async function POST(request: Request): Promise<Response> {
     "Make only this change, described by the customer:",
     theme,
     "Everything else must stay exactly as it is — the same garment, the same layout, the same striping and the same colors wherever the requested change does not touch them.",
-    "Keep the front view and the back view side by side on their hangers and the socks laid alongside, in the same arrangement as the attached image, and keep every piece the same kit as the others.",
+    "Keep the front view and the back view side by side on their hangers and the socks laid alongside, in the same arrangement as the attached image, every piece complete and uncropped, and every piece the same kit as the others.",
+    NAMEPLATE,
     `Color palette limited strictly to: ${palette.join(", ")}.`,
     NEGATIVE,
   ].join(" ");

@@ -800,14 +800,18 @@ const CFG = {
     {id:'scene', name:'Illustrated'},
     {id:'bold',  name:'Graphic'},
   ],
-  // The four vibes offered in step 1. `brief` is the phrase sent to the model
-  // as the design, so the words the customer taps and the words we send stay
-  // together.
+  /* The four vibes offered in step 1. `brief` is the phrase sent to the model,
+     so the words the customer taps and the words we send stay together.
+
+     Vibe is the treatment, not the subject. The subject comes from the theme
+     and is asked for as a scene with a mascot at the chest, so these say how it
+     is drawn rather than what it is of — which is also why Classic is the only
+     one that mentions stripes. */
   vibes: [
-    {id:'classic', name:'Classic', note:'Traditional',   brief:'A classic, traditional team jersey'},
-    {id:'modern',  name:'Modern',  note:'Clean lines',   brief:'A modern jersey with clean lines and simple, confident shapes'},
-    {id:'bold',    name:'Bold',    note:'High contrast', brief:'A bold, high-contrast jersey with strong graphic striping'},
-    {id:'retro',   name:'Retro',   note:'Throwback',     brief:'A retro throwback jersey with an old-school feel'},
+    {id:'classic', name:'Classic', note:'Traditional',   brief:'drawn as traditional teamwear: conventional striping at the chest, sleeves and hem, clean and orthodox'},
+    {id:'modern',  name:'Modern',  note:'Clean lines',   brief:'drawn clean and geometric: sharp edges, simple confident shapes, uncluttered'},
+    {id:'bold',    name:'Bold',    note:'High contrast', brief:'drawn in high-contrast flat color: large graphic shapes, hard edges, poster-like'},
+    {id:'retro',   name:'Retro',   note:'Throwback',     brief:'drawn as a vintage throwback: distressed halftone texture, a muted period palette, vintage linework'},
   ],
   // Whether the customer brings their own crest.
   crest: [
@@ -979,8 +983,11 @@ function showCrest(){
 function buildBrief(){
   const vibe=CFG.vibes.find(v=>v.id===S.vibe);
   const extra=$('#prompt').value.trim();
-  const parts=[vibe?vibe.brief:'A clean, conventional team jersey'];
-  if(extra) parts.push(extra);
+  /* Subject first, treatment second: the theme is what the scene is of, and the
+     vibe is how it is drawn. A brief that leads with the treatment gets a
+     texture and no subject. */
+  const parts=[extra || 'an original design of the team\'s own choosing, built around a single clear subject that suits the colors'];
+  if(vibe) parts.push(vibe.brief);
   return parts.join(', ')+'.';
 }
 
@@ -1151,13 +1158,13 @@ function findJersey(jersey){
   };
 }
 
-const luma = hex => {
-  const n = parseInt(hex.slice(1),16);
-  return 0.2126*((n>>16)&255) + 0.7152*((n>>8)&255) + 0.0722*(n&255);
-};
-
-/* The crest layer: the uploaded logo, or the team name set as a wordmark. Drawn
-   at whatever the search found, sized against the garment it found. */
+/* The crest layer: the customer's own file, dropped on at whatever the search
+   found and sized against the garment it found.
+ *
+ * Only ever their own file. A customer who has no crest is answering "no, design
+ * one for us", and what designs it is the model — the brief asks for a mascot or
+ * icon at the chest, drawn into the scene rather than pasted onto it. Anything
+ * composited here would land on top of that. */
 async function drawCrest(c, spot, W, H){
   const box = spot.box*W;
   if(S.logo){
@@ -1167,46 +1174,14 @@ async function drawCrest(c, spot, W, H){
     // proportions instead of being stretched.
     const k = Math.min(box/lw, box/lh);
     c.drawImage(logo, spot.x*W-lw*k/2, spot.y*H-lh*k/2, lw*k, lh*k);
-    return;
   }
-
-  const team = $('#teamName').value.trim();
-  if(S.crest!=='name' || !team) return;
-
-  /* Read what the wordmark is about to sit on and take the side of it that
-     contrasts, outlined in the other. The chest can be any color, and a name
-     nobody can read is worse than no name. */
-  const w = box*1.5, h = box*0.42;
-  const x = Math.max(0, Math.round(spot.x*W-w/2)), y = Math.max(0, Math.round(spot.y*H-h/2));
-  const patch = c.getImageData(x, y, Math.min(Math.round(w), W-x), Math.min(Math.round(h), H-y)).data;
-  let sum = 0;
-  for(let i=0;i<patch.length;i+=4) sum += 0.2126*patch[i] + 0.7152*patch[i+1] + 0.0722*patch[i+2];
-  const dark = sum/(patch.length/4) < 140;
-
-  const text = team.toUpperCase();
-  c.save();
-  c.textAlign = 'center';
-  c.textBaseline = 'middle';
-  let px = h;
-  const face = size => `italic 900 ${size}px "Arial Narrow", "Helvetica Neue", Arial, sans-serif`;
-  c.font = face(px);
-  const wide = c.measureText(text).width;
-  if(wide > w){ px = Math.max(18, px*w/wide); c.font = face(px); }
-  c.lineJoin = 'round';
-  c.lineWidth = px/9;
-  c.strokeStyle = dark ? '#101317' : '#f4f6f8';
-  c.strokeText(text, spot.x*W, spot.y*H);
-  c.fillStyle = dark ? '#f4f6f8' : '#101317';
-  c.fillText(text, spot.x*W, spot.y*H);
-  c.restore();
 }
 
 /* Returns the concept with the crest on it, or the concept untouched if there
    is nothing to put on it or the compositing fails — a missing crest beats a
    lost design. */
 async function applyCrest(src){
-  const wantsCrest = S.logo || (S.crest==='name' && $('#teamName').value.trim());
-  if(!wantsCrest) return src;
+  if(!S.logo) return src;
   try{
     const jersey = await loadImg(src);
     const cv=document.createElement('canvas');
