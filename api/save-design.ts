@@ -1,4 +1,6 @@
 import { put } from "@vercel/blob";
+// Compiled output is .js, and the runtime resolves this specifier verbatim.
+import { sendDesign } from "./send-design.js";
 
 /**
  * POST /api/save-design
@@ -320,6 +322,32 @@ async function findByCode(code: string): Promise<{ id: string | null; snag: Snag
 }
 
 /**
+ * Reads back what the mail needs: the code the customer quotes, and somewhere
+ * to fetch the concept from. Only called when an email is going out.
+ */
+async function readDesign(recordId: string): Promise<{ code: string | null; imageUrl: string | null }> {
+  try {
+    const query = new URLSearchParams({ returnFieldsByFieldId: "true" });
+    const res = await fetch(`${table()}/${encodeURIComponent(recordId)}?${query}`, {
+      headers: airtableHeaders(),
+    });
+    if (!res.ok) {
+      report(await readSnag("airtable:read", res), 0, `record=${recordId}`);
+      return { code: null, imageUrl: null };
+    }
+    const rec = await res.json();
+    const concept = rec?.fields?.[FIELD.concept];
+    return {
+      code: rec?.fields?.[FIELD.code] ?? null,
+      imageUrl: Array.isArray(concept) && concept[0]?.url ? concept[0].url : null,
+    };
+  } catch (err) {
+    report(snagFrom("airtable:read", err), 0, `record=${recordId}`);
+    return { code: null, imageUrl: null };
+  }
+}
+
+/**
  * Updates a design already on file. Patches that one row — the design was saved
  * the moment it was drawn, so creating a second row here would split one design
  * across two, which is how Email and Team end up on a record nobody looks at.
@@ -327,6 +355,10 @@ async function findByCode(code: string): Promise<{ id: string | null; snag: Snag
 async function updateRecord(
   who: { recordId?: string; code?: string },
   fields: Record<string, unknown>,
+  /* Set only when the customer has just handed over an address, which is the
+     one thing that sends mail. Everything else that patches this row — colours,
+     kit, roster — passes nothing here and sends nothing. */
+  mail?: { email: string; origin: string | null },
 ): Promise<Response> {
   const notReady = unconfigured([
     "AIRTABLE_TOKEN",
@@ -400,13 +432,28 @@ async function updateRecord(
       `fields=${Object.keys(fields).join("|")}`,
     );
 
-    // TODO: send the customer their copy. The design and the code are already
-    // on record, so this only needs the transactional mail — attach or link
-    // the concept, quote the code, and report a provider failure back to the
-    // page, which renders { error }. Until then the page must not tell anyone
-    // an email is on its way.
+    /* The copy the customer asked for. Sent after the write, never before: the
+       design and the address are on record either way, so a provider outage
+       costs an email and nothing else. The page is told whether it went so it
+       can say what actually happened rather than promising mail. */
+    let emailed = false;
+    if (mail) {
+      const design = await readDesign(recordId);
+      const code = design.code ?? who.code ?? null;
+      if (!code) {
+        console.error(`save-design: no code on ${recordId}, cannot send a copy`);
+      } else {
+        const sent = await sendDesign({
+          to: mail.email,
+          code,
+          imageUrl: design.imageUrl,
+          origin: mail.origin,
+        });
+        emailed = sent.ok;
+      }
+    }
+    return Response.json({ ok: true, emailed });
 
-    return Response.json({ ok: true });
   } catch (err) {
     const snag = snagFrom("airtable:patch", err);
     report(snag, Date.now() - began, `record=${who.recordId ?? "-"} code=${who.code ?? "-"}`);
@@ -414,6 +461,18 @@ async function updateRecord(
       { error: "We couldn't save that against your design", detail: snag },
       { status: 502 },
     );
+  }
+}
+
+/* Where the reopen link should point. SITE_URL wins when it is set; this is
+   the fallback, and it is right unless a proxy rewrites the host. */
+function originOf(request: Request): string | null {
+  const origin = request.headers.get("origin");
+  if (origin) return origin;
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    return null;
   }
 }
 
@@ -505,7 +564,12 @@ export async function POST(request: Request): Promise<Response> {
     if (!Object.keys(fields).length) {
       return Response.json({ error: "Nothing to update" }, { status: 400 });
     }
-    return updateRecord({ recordId: body.recordId, code: code || undefined }, fields);
+    /* Mail only when this save is the one carrying the address. A palette or a
+       roster arriving later patches the same row and must not re-send. */
+    const sending = body.email !== undefined && typeof fields[FIELD.email] === "string"
+      ? { email: fields[FIELD.email] as string, origin: originOf(request) }
+      : undefined;
+    return updateRecord({ recordId: body.recordId, code: code || undefined }, fields, sending);
   }
 
   if (!body.image) {

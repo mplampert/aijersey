@@ -1734,9 +1734,15 @@ $('#saveBtn').onclick=async()=>{
         +':: '+((s&&s.message)||(d&&d.error)||'no detail returned'));
       throw new Error((d&&d.error)||'We couldn\'t save that just now — try again in a moment.');
     }
-    // Nothing is emailed yet, so this says only what actually happened.
+    /* Says what actually happened, which depends on whether the mail went. A
+       send that failed still saved the address, and promising an email that is
+       not coming is worse than not promising one. */
+    const d=await res.json().catch(()=>null);
     msg.className='saved ok';
-    msg.textContent='Saved against design code '+v.code+'. Quote it any time — we\'ll be in touch at '+email+'.';
+    msg.textContent = d&&d.emailed
+      ? 'Sent to '+email+' — design code '+(v.code||'')+'. Check your spam folder if it isn\'t there in a minute.'
+      : 'Saved against design code '+(v.code||'')+'. Quote it any time — we\'ll be in touch at '+email+'.';
+    if(d&&!d.emailed) console.warn('save address: saved, but no email went out — see the function log');
   }catch(err){
     msg.className='saved bad';
     msg.textContent=err.message;

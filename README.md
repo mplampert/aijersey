@@ -9,11 +9,17 @@ npm i -g netlify-cli      # if you don't have it
 netlify deploy --prod
 ```
 
-Set the env var, then redeploy — Netlify env changes don't reach functions
+Set the env vars, then redeploy — Netlify env changes don't reach functions
 until a new deploy:
 
 ```
-netlify env:set GEMINI_API_KEY <key>
+netlify env:set AI_GATEWAY_API_KEY <key>    # image generation and the checker
+netlify env:set BLOB_READ_WRITE_TOKEN <key> # concept images
+netlify env:set AIRTABLE_TOKEN <key>        # data.records:write on the base
+netlify env:set AIRTABLE_BASE_ID <id>
+netlify env:set AIRTABLE_TABLE_ID <id>
+netlify env:set RESEND_API_KEY <key>        # the customer's copy of their design
+netlify env:set SITE_URL https://…          # optional; where the reopen link points
 netlify deploy --prod
 ```
 
@@ -97,6 +103,24 @@ is one more request against the same cap, and a serverless function has an
 execution limit to run into where the browser does not.
 
 Tune `spacing`, `rateRetries` and `waitCap` in `CFG`.
+
+## Email
+
+One email exists, and one thing triggers it: a customer typing an address into
+"Don't lose this design" and pressing the button. That save writes Email, Team
+and Phone to their row and then sends them their design code, the concept as an
+attachment, and a link that reopens it. Nothing else sends, and nothing sends
+unprompted — a palette or a roster patching the same row later does not re-send.
+
+`api/send-design.ts`, from `noreply@send.lampertsusa.com`. The domain has to be
+verified in Resend or every send is refused. The concept travels as an
+attachment rather than a link because Airtable's attachment URLs expire within
+hours and a customer opening the mail next week would find a hole where their
+jersey was.
+
+Sending is best-effort and never fails the save: the design and the address are
+on record before it runs, and the page says which happened rather than promising
+mail that did not go.
 
 ## Reading a failed generation
 
