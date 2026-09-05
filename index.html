@@ -632,7 +632,7 @@ footer{
           <label class="fld" for="saveEmail">Don&rsquo;t lose this design</label>
           <p class="note">There&rsquo;s no account to log back into. Leave your address and we&rsquo;ll
             email you a link to your own gallery &mdash; this design and everything else you save.</p>
-          <input type="email" id="saveEmail" placeholder="you@yourteam.com" autocomplete="email">
+          <input type="email" id="saveEmail" placeholder="Email address" autocomplete="email">
           <label class="fld" for="saveName">Your name</label>
           <input type="text" id="saveName" placeholder="Alex Moreau" autocomplete="name">
           <label class="fld" for="savePhone">Phone <span class="opt">Optional</span></label>
@@ -642,8 +642,6 @@ footer{
           <button class="ghost" id="saveBtn">Save this design for me</button>
           <p class="saved" id="saveMsg" hidden role="status"></p>
 
-        </div>
-          </div>
         </div>
       </div>
 
@@ -1694,6 +1692,13 @@ $('#gen').onclick=async()=>{
   btn.disabled=true;btn.textContent='Generating…';
   msg.hidden=true;
   showBusy('Drawing the first of '+CFG.variants.length);
+  /* The button is at the foot of the questions; the canvas is back up the page.
+     Without this the customer watches a form while three jerseys arrive off
+     screen. */
+  $('#canvas').scrollIntoView({
+    behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',
+    block:'center'
+  });
 
   /* One at a time, spaced out. Each is shown the moment it lands, so the first
      one back fills the canvas and the rest arrive behind it. One that fails
