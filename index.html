@@ -456,7 +456,13 @@ tr.err td{background:#2a1116}
   letter-spacing:-.01em;cursor:pointer;margin-top:16px;
 }
 .cta:hover{background:var(--crease-lo)}
+/* Genuinely switched off — only while checkout is opening. */
 .cta[disabled]{background:var(--boards-hi);color:var(--ice-3);cursor:not-allowed}
+/* Waiting on the roster. Reads as not-yet, but it is pressable and pressing it
+   is the way to the thing it is asking for, so it keeps a pointer and lights
+   up under the cursor. After .cta:hover, which it has to beat. */
+.cta.wait{background:var(--boards-hi);color:var(--ice-3);cursor:pointer}
+.cta.wait:hover{background:var(--boards-hi);color:var(--ice)}
 .ghost{
   background:transparent;border:1.5px solid var(--seam);color:var(--ice);border-radius:var(--rad);
   padding:9px 15px;font-weight:600;font-size:var(--t-sm);cursor:pointer;
@@ -705,7 +711,7 @@ footer{
   </section>
 
   <!-- 2 ................................................. ROSTER -->
-  <section>
+  <section id="roster">
     <div class="step-hd"><span class="step-no">2</span><h2>Roster</h2></div>
     <p class="note">Paste it, upload a CSV, or type it in. Minimum order is <span id="moqTxt"></span> jerseys.</p>
 
@@ -763,7 +769,7 @@ footer{
       <div><label class="fld" for="phone">Phone <span class="opt">Optional</span></label><input type="tel" inputmode="numeric" id="phone" placeholder="(555) 234-5678" autocomplete="tel"></div>
     </div>
 
-    <button class="cta" id="checkout" disabled>Add a roster to continue</button>
+    <button class="cta wait" id="checkout" data-ready="">Add a roster to continue</button>
     <p class="note">Paid in full for goods; shipping is quoted separately once your order is boxed.
       Your factory proof comes within 48 hours.</p>
     <p class="note"><b>Not what you pictured?</b> We&rsquo;ll revise the proof until it&rsquo;s right.
@@ -895,6 +901,14 @@ const CFG = {
 };
 
 const $ = s => document.querySelector(s);
+/* Every place that moves the page moves it the same way, and none of them
+   move it for somebody who has asked their system not to. */
+function bringIntoView(el,block){
+  el.scrollIntoView({
+    behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',
+    block:block||'center'
+  });
+}
 /* Prices are written in dollars above because that is how they are quoted, and
    arithmetic on them happens in cents because 49.99 is not representable in
    binary floating point — twelve of them add up to 599.8799999999999. cents()
@@ -904,7 +918,7 @@ const cents = d => Math.round(d*100);
 const money = c => (c/100).toLocaleString('en-US',{style:'currency',currency:'USD'});
 
 /* ---------------- state ---------------- */
-const S = { logo:null, colors:[], roster:[], kit:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id, vibe:null, crest:null,
+const S = { logo:null, colors:[], roster:[], kit:{}, concept:null, versions:[], vIndex:-1, styles:[], style:CFG.styles[0].id, vibe:null, crest:null, saved:null,
   session:(self.crypto&&self.crypto.randomUUID) ? self.crypto.randomUUID()
         : 's'+Date.now().toString(36)+Math.random().toString(36).slice(2,8) };
 
@@ -954,10 +968,7 @@ if(CFG.heroImages.length>1){
 document.querySelectorAll('a[href="#designer"]').forEach(a=>{
   a.onclick=e=>{
     e.preventDefault();
-    $('#designer').scrollIntoView({
-      behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',
-      block:'start'
-    });
+    bringIntoView($('#designer'),'start');
   };
 });
 
@@ -1495,18 +1506,42 @@ function normalPhone(value){
   return /^[2-9]\d{2}[2-9]\d{6}$/.test(ten) ? '+1'+ten : null;
 }
 
-/* Typed once in the design step, already there at checkout — until the
-   customer edits the order one, after which it is theirs and stays put. */
-let phoneEdited=false;
-$('#phone').oninput=()=>{phoneEdited=true;pushOrder();};
-$('#savePhone').oninput=()=>{
-  if(!phoneEdited) $('#phone').value=$('#savePhone').value;
-};
-let contactEdited=false;
-$('#contact').oninput=()=>{contactEdited=true;};
-$('#saveName').oninput=()=>{
-  if(!contactEdited) $('#contact').value=$('#saveName').value;
-};
+/* Section 3 asks for an email, a name, a phone and a team. The design step has
+   already asked for all four. Nobody should type their own name twice to buy
+   one thing, so each order field mirrors the design-step field it duplicates —
+   until the customer edits the order field, after which it is theirs and
+   nothing overwrites it. A billing address that differs from the one the
+   design was saved under is a real thing people want, so the boxes stay
+   visible and editable rather than being replaced by a summary.
+
+   Somebody who skipped the save box has typed none of this, and gets four
+   empty boxes exactly as before. */
+const MIRROR=[
+  {from:'#saveEmail',to:'#email'},
+  {from:'#saveName', to:'#contact'},
+  {from:'#savePhone',to:'#phone',   push:true},
+  // The design's team is the order's team; there has never been a second one.
+  {from:'#teamName', to:'#team',    push:true},
+];
+const ownEdit=new Set();
+MIRROR.forEach(m=>{
+  const to=$(m.to), from=$(m.from);
+  to.addEventListener('input',()=>{ ownEdit.add(m.to); if(m.push) pushOrder(); });
+  from.addEventListener('input',()=>{ if(!ownEdit.has(m.to)) to.value=from.value; });
+});
+
+/* Keystrokes mirror as they happen, but a save is the moment the answers stop
+   being a draft — and the record it files is what the order should be placed
+   against. Copied across again here so a design saved before the customer ever
+   scrolled to section 3 still arrives with the boxes filled. */
+function prefillAccount(){
+  if(!S.saved) return;
+  MIRROR.forEach(m=>{
+    const val=(S.saved[m.to]||'').trim();
+    if(val && !ownEdit.has(m.to)) $(m.to).value=val;
+  });
+  pushOrder();
+}
 
 /* ---------------- sharing ---------------- */
 /* A design code in the address bar opens that design straight into the canvas,
@@ -1695,10 +1730,7 @@ $('#gen').onclick=async()=>{
   /* The button is at the foot of the questions; the canvas is back up the page.
      Without this the customer watches a form while three jerseys arrive off
      screen. */
-  $('#canvas').scrollIntoView({
-    behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',
-    block:'center'
-  });
+  bringIntoView($('#canvas'));
 
   /* One at a time, spaced out. Each is shown the moment it lands, so the first
      one back fills the canvas and the rest arrive behind it. One that fails
@@ -1784,10 +1816,7 @@ async function findByCode(code,msg){
   $('#finder').hidden=true;
   $('#findBtn').setAttribute('aria-expanded','false');
   $('#findInput').value='';
-  $('#canvas').scrollIntoView({
-    behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',
-    block:'center'
-  });
+  bringIntoView($('#canvas'));
 }
 
 async function findByAddress(email,msg){
@@ -1916,6 +1945,12 @@ $('#saveBtn').onclick=async()=>{
       msg.append(' ',a);
     }
     if(d&&!d.emailed) console.warn('save address: saved, but no email went out — see the function log');
+    /* Filed. These are now the details this order belongs to, so section 3
+       stops asking for them a second time. The phone kept as typed rather than
+       as normalised — "(555) 234-5678" is what the customer wrote and what
+       they should see in the box. */
+    S.saved={'#email':email,'#contact':name,'#phone':typed,'#team':team};
+    prefillAccount();
   }catch(err){
     msg.className='saved bad';
     msg.textContent=err.message;
@@ -2179,7 +2214,6 @@ function pushOrder(){
     }).catch(()=>{});   // the customer is not waiting on this
   },700);
 }
-$('#team').oninput=pushOrder;
 
 function drawOrder(valid){
   const n=S.roster.length;
@@ -2204,7 +2238,13 @@ function drawOrder(valid){
     +'<span style="color:var(--dim)">Quoted separately</span>';box.append(ship);
 
   const btn=$('#checkout');
-  btn.disabled=!valid;
+  /* Pressable in every state. Greyed out it is still a button, and every
+     sentence it can be showing is an instruction to go and do something in
+     section 2 — so pressing it goes there. Genuinely disabled only while
+     checkout is opening, which is the one state the customer can't help with. */
+  btn.disabled=false;
+  btn.dataset.ready=valid?'1':'';
+  btn.classList.toggle('wait',!valid);
   /* Says the minimum out loud rather than "fix the roster", because a customer
      eleven jerseys in cannot tell those two apart and one of them is a rule
      nobody told them about. */
@@ -2215,11 +2255,31 @@ function drawOrder(valid){
     : (n ? 'Fix the roster to continue' : 'Add a roster to continue');
 }
 
+/* The other half of the button. It has been telling people to add a roster
+   since the page was written and doing nothing about it; now it takes them
+   there and puts the cursor in the box that is wrong, which on a phone is
+   three sections of scrolling it no longer asks anybody to do. */
+function sendToRoster(){
+  // An empty roster has nothing to focus, so give it the row it is asking for.
+  if(!S.roster.length) addPlayer();
+  bringIntoView($('#roster'),'start');
+  const rows=$('#rows');
+  const row=rows.querySelector('tr.err')||rows.querySelector('tr');
+  if(!row) return;
+  /* The first empty box in the first bad row — the actual thing standing
+     between them and checkout. Falls back to the row's first field when the
+     fault is a duplicate number, where nothing is empty. */
+  const fields=[...row.querySelectorAll('input,select')].filter(el=>el.type!=='checkbox');
+  const field=fields.find(el=>!el.value)||fields[0];
+  if(field) field.focus({preventScroll:true});
+}
+
 /* Places the order. Takes no money, and says so — payment is a link that
    arrives after the factory proof is approved, which is the whole shape of
    this: nobody is charged for a garment they have not seen redrawn. */
 $('#checkout').onclick=async()=>{
   const btn=$('#checkout'), msg=$('#coMsg');
+  if(btn.dataset.ready!=='1'){ sendToRoster(); return; }
   const v=S.vIndex<0?null:S.versions[S.vIndex];
   const email=$('#email').value.trim();
   if(!email){
@@ -2290,7 +2350,7 @@ $('#checkout').onclick=async()=>{
     msg.textContent='No payment was taken and your order is still here — press the button again'
       +' when you are ready.';
   }
-  msg.scrollIntoView({behavior:'smooth',block:'center'});
+  bringIntoView(msg);
 })();
 
 drawPicked();drawOrder(false);openShared();
